@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import type { Stack, StackId, CommitId, Commit } from "../../backend/src/repo-parser";
 import type { ParallelGroup, LayoutStackGraph } from "../../backend/src/layout-utils";
 
@@ -60,6 +60,70 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false }: Stack
   );
 }
 
+interface CurvedArrowProps {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  type: 'linear' | 'merge' | 'branch';
+}
+
+function CurvedArrow({ from, to, type }: CurvedArrowProps) {
+  const getArrowColor = (type: string) => {
+    switch (type) {
+      case 'merge': return '#ef4444'; // red
+      case 'branch': return '#f59e0b'; // amber
+      case 'linear': return '#3b82f6'; // blue
+      default: return '#6b7280'; // gray
+    }
+  };
+
+  const getArrowWidth = (type: string) => {
+    return type === 'linear' ? 2 : 3;
+  };
+
+  // Calculate control points for a smooth curve
+  const dy = to.y - from.y;
+  
+  // For clean vertical entry/exit, make control points extend vertically from endpoints
+  const verticalExtension = Math.max(Math.abs(dy) * 0.3, 40); // Minimum 40px vertical extension
+  
+  // Control points for vertical entry/exit
+  const cp1x = from.x; // Stay directly above/below the start point
+  const cp1y = from.y - verticalExtension; // Extend vertically upward from start
+  const cp2x = to.x; // Stay directly above/below the end point  
+  const cp2y = to.y + verticalExtension; // Extend vertically downward toward end
+
+  const pathData = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+
+  // Calculate arrow head angle - should point in the direction of travel
+  const arrowSize = 8;
+  
+  // For UPWARD arrows (older to newer commits), arrows point UP
+  // Move the entire arrowhead up slightly for better positioning
+  const arrowOffset = 4; // Move up by 4 pixels
+  const arrowPoint1x = to.x - arrowSize * 0.5; // Left wing
+  const arrowPoint1y = to.y + arrowSize - arrowOffset; // Below the tip, moved up
+  const arrowPoint2x = to.x + arrowSize * 0.5; // Right wing  
+  const arrowPoint2y = to.y + arrowSize - arrowOffset; // Below the tip, moved up
+
+  return (
+    <g>
+      <path
+        d={pathData}
+        stroke={getArrowColor(type)}
+        strokeWidth={getArrowWidth(type)}
+        fill="none"
+        opacity={0.8}
+        strokeDasharray={type === 'branch' ? '5,5' : undefined}
+      />
+      <polygon
+        points={`${to.x},${to.y - arrowOffset} ${arrowPoint1x},${arrowPoint1y} ${arrowPoint2x},${arrowPoint2y}`}
+        fill={getArrowColor(type)}
+        opacity={0.8}
+      />
+    </g>
+  );
+}
+
 interface ConnectionComponentProps {
   connection: {
     from: StackId;
@@ -105,6 +169,8 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
 }) {
   const { stacks, connections, rootStacks, leafStacks, parallelGroups } = stackGraph;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [stackPositions, setStackPositions] = useState<Record<StackId, { x: number; y: number; top: number; bottom: number }>>({});
   
   // Create a map to quickly find which parallel group a stack belongs to
   const stackToGroup = useMemo(() => {
@@ -167,6 +233,49 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
     return levels;
   }, [stacks, rootStacks, stackToGroup]);
 
+  // Track positions of stack elements for drawing arrows
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const updatePositions = () => {
+      const positions: Record<StackId, { x: number; y: number; top: number; bottom: number }> = {};
+      const stackElements = containerRef.current?.querySelectorAll('[data-stack-id]');
+      const scrollContainer = containerRef.current?.querySelector('[data-scroll-container]') as HTMLElement;
+      
+      stackElements?.forEach((element) => {
+        const stackId = element.getAttribute('data-stack-id') as StackId;
+        if (stackId && scrollContainer) {
+          const rect = element.getBoundingClientRect();
+          const scrollRect = scrollContainer.getBoundingClientRect();
+          
+          // Calculate position relative to the scroll container with actual bounds
+          positions[stackId] = {
+            x: rect.left - scrollRect.left + rect.width / 2,
+            y: rect.top - scrollRect.top + rect.height / 2,
+            top: rect.top - scrollRect.top,
+            bottom: rect.top - scrollRect.top + rect.height
+          };
+        }
+      });
+      
+      setStackPositions(positions);
+    };
+
+    // Update positions after render
+    const timeoutId = setTimeout(updatePositions, 100);
+    
+    // Update on resize and scroll
+    const scrollContainer = containerRef.current?.querySelector('[data-scroll-container]');
+    window.addEventListener('resize', updatePositions);
+    scrollContainer?.addEventListener('scroll', updatePositions);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', updatePositions);
+      scrollContainer?.removeEventListener('scroll', updatePositions);
+    };
+  }, [layoutLevels]);
+
   if (Object.keys(stacks).length === 0) {
     return (
       <div style={{ 
@@ -184,12 +293,15 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
   }
 
   return (
-    <div style={{ 
-      padding: '20px',
-      border: '1px solid #e5e7eb', 
-      borderRadius: '8px',
-      background: '#fafafa'
-    }}>
+    <div 
+      ref={containerRef}
+      style={{ 
+        padding: '20px',
+        border: '1px solid #e5e7eb', 
+        borderRadius: '8px',
+        background: '#fafafa'
+      }}
+    >
       {/* Header with summary */}
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ margin: '0 0 12px 0', fontSize: '20px', color: '#111827' }}>
@@ -198,17 +310,55 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
       </div>
 
       {/* Stack layout - vertical flow, newest on top */}
-      <div style={{ 
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px',
-        overflowY: 'auto',
-        maxHeight: '80vh',
-      }}>
+      <div 
+        data-scroll-container
+        style={{ 
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          overflowY: 'auto',
+          maxHeight: '80vh',
+          position: 'relative'
+        }}
+      >
+        {/* SVG overlay for curved arrows - now inside the scrollable container */}
+        <svg
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 10
+          }}
+        >
+          {connections.map((connection, index) => {
+            const fromStack = stackPositions[connection.from];
+            const toStack = stackPositions[connection.to];
+            
+            if (!fromStack || !toStack) return null;
+            
+            // Connection semantics: "from" is older stack, "to" is newer stack
+            // Arrows should flow upward from older (lower in UI) to newer (higher in UI)
+            // Use actual stack bounds instead of fixed offsets
+            const fromPoint = { x: fromStack.x, y: fromStack.top }; // top edge of older stack
+            const toPoint = { x: toStack.x, y: toStack.bottom }; // bottom edge of newer stack
+            
+            return (
+              <CurvedArrow
+                key={index}
+                from={fromPoint}
+                to={toPoint}
+                type={connection.type}
+              />
+            );
+          })}
+        </svg>
         {layoutLevels.slice().reverse().map((level, levelIndex) => {
           const actualLevelIndex = layoutLevels.length - 1 - levelIndex;
           return (
-          <div key={actualLevelIndex}>
+          <div key={actualLevelIndex} style={{ position: 'relative', zIndex: 2 }}>
             {/* Stacks in this level - horizontal layout, centered */}
             <div style={{
               display: 'flex',
@@ -223,7 +373,11 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
                 const stack = stacks[item.stackId];
                 
                 return (
-                  <div key={item.stackId} style={{ position: 'relative', minWidth: '280px' }}>
+                  <div 
+                    key={item.stackId} 
+                    data-stack-id={item.stackId}
+                    style={{ position: 'relative', minWidth: '280px' }}
+                  >
                     <StackComponent 
                       stack={stack} 
                       commitGraph={commitGraph}
