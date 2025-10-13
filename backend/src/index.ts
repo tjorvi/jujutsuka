@@ -1,10 +1,11 @@
 import { publicProcedure, router } from './trpc.ts';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
+import { $ } from 'execa';
  
 const appRouter = router({
-  test: publicProcedure
+  changes: publicProcedure
     .query(async () => {
-        return 'yebbseepebbsee'
+        await $`jj log --no-graph --template 'commit_id ++ "|" ++ description ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\n"'`;
     }),
 });
 
