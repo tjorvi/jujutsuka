@@ -1,6 +1,6 @@
 import { publicProcedure, router } from './trpc.ts';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
-import { buildCommitGraph, getRepositoryCommits } from './repo-parser.ts';
+import { buildCommitGraph, buildStackGraph, getRepositoryCommits } from './repo-parser.ts';
  
 const appRouter = router({
   graph: publicProcedure
@@ -8,6 +8,12 @@ const appRouter = router({
         const commits = await getRepositoryCommits();
         const graph = buildCommitGraph(commits);
         return graph;
+    }),
+  stacks: publicProcedure
+    .query(async () => {
+        const commits = await getRepositoryCommits();
+        const stackGraph = buildStackGraph(commits);
+        return stackGraph;
     }),
 });
 
