@@ -1,32 +1,36 @@
 import { useMemo } from 'react';
-import type { StackGraph, Stack, StackId, CommitId, Commit } from "../../backend/src/repo-parser";
+import type { Stack, StackId, CommitId, Commit } from "../../backend/src/repo-parser";
+import type { ParallelGroup, LayoutStackGraph } from "../../backend/src/layout-utils";
 
 interface StackComponentProps {
   stack: Stack;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
+  isInParallelGroup?: boolean;
 }
 
-function StackComponent({ stack, commitGraph }: StackComponentProps) {
+function StackComponent({ stack, commitGraph, isInParallelGroup = false }: StackComponentProps) {
   return (
     <div style={{
-      border: '2px solid #3b82f6',
+      border: isInParallelGroup ? '2px solid #a855f7' : '2px solid #3b82f6',
       borderRadius: '8px',
       background: 'white',
-      margin: '8px',
+      margin: isInParallelGroup ? '4px' : '8px',
       padding: '12px',
       minWidth: '200px',
-      boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+      boxShadow: isInParallelGroup 
+        ? '0 2px 8px rgba(168, 85, 247, 0.1)' 
+        : '0 2px 10px rgba(0,0,0,0.1)',
     }}>
       <div style={{ 
         fontSize: '12px', 
         fontWeight: 'bold', 
         marginBottom: '8px',
-        color: '#6b7280'
+        color: isInParallelGroup ? '#7c3aed' : '#6b7280'
       }}>
-        Stack {stack.id} ({stack.commits.length} commits)
+        {stack.commits.length} commit{stack.commits.length > 1 ? 's' : ''}
       </div>
       
-      {stack.commits.map((commitId, index) => {
+      {stack.commits.slice().reverse().map((commitId, index) => {
         const commit = commitGraph[commitId]?.commit;
         if (!commit) return null;
         
@@ -36,12 +40,14 @@ function StackComponent({ stack, commitGraph }: StackComponentProps) {
             marginBottom: index < stack.commits.length - 1 ? '4px' : '0',
             background: '#f8fafc',
             borderRadius: '4px',
-            borderLeft: '3px solid #3b82f6',
+            borderLeft: isInParallelGroup 
+              ? '3px solid #a855f7' 
+              : '3px solid #3b82f6',
           }}>
             <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
               {commitId.slice(0, 8)}
             </div>
-            <div style={{ fontSize: '13px', margin: '2px 0' }}>
+            <div style={{ fontSize: '13px', margin: '2px 0', color: '#374151' }}>
               {commit.description}
             </div>
             <div style={{ fontSize: '10px', color: '#9ca3af' }}>
@@ -50,24 +56,6 @@ function StackComponent({ stack, commitGraph }: StackComponentProps) {
           </div>
         );
       })}
-      
-      {/* Show stack relationships */}
-      {(stack.parentStacks.length > 0 || stack.childStacks.length > 0) && (
-        <div style={{ 
-          marginTop: '8px', 
-          fontSize: '10px', 
-          color: '#6b7280',
-          borderTop: '1px solid #e5e7eb',
-          paddingTop: '4px'
-        }}>
-          {stack.parentStacks.length > 0 && (
-            <div>⬆️ Parents: {stack.parentStacks.join(', ')}</div>
-          )}
-          {stack.childStacks.length > 0 && (
-            <div>⬇️ Children: {stack.childStacks.join(', ')}</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -113,44 +101,71 @@ function ConnectionComponent({ connection }: ConnectionComponentProps) {
 }
 
 export function StackGraphComponent({ stackGraph, commitGraph }: { 
-  stackGraph: StackGraph;
+  stackGraph: LayoutStackGraph;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
 }) {
-  const { stacks, connections, rootStacks, leafStacks } = stackGraph;
+  const { stacks, connections, rootStacks, leafStacks, parallelGroups } = stackGraph;
   
-  // Group stacks into columns for better layout
-  const stackLevels = useMemo(() => {
-    const levels: StackId[][] = [];
+  // Create a map to quickly find which parallel group a stack belongs to
+  const stackToGroup = useMemo(() => {
+    const map = new Map<StackId, ParallelGroup>();
+    parallelGroups.forEach(group => {
+      group.stackIds.forEach(stackId => {
+        map.set(stackId, group);
+      });
+    });
+    return map;
+  }, [parallelGroups]);
+  
+  // Group stacks and parallel groups into columns for better layout
+  const layoutLevels = useMemo(() => {
+    type LayoutItem = { type: 'stack'; stackId: StackId; isParallel?: boolean; parallelGroupId?: string };
+    const levels: LayoutItem[][] = [];
     const visited = new Set<StackId>();
     
     // Start with root stacks
-    const queue: { stackId: StackId; level: number }[] = 
-      rootStacks.map(id => ({ stackId: id, level: 0 }));
+    const queue: { item: LayoutItem; level: number }[] = [];
+    
+    // Add root stacks to queue
+    rootStacks.forEach(stackId => {
+      queue.push({ item: { type: 'stack', stackId }, level: 0 });
+      visited.add(stackId);
+    });
     
     while (queue.length > 0) {
-      const { stackId, level } = queue.shift()!;
-      
-      if (visited.has(stackId)) continue;
-      visited.add(stackId);
+      const { item, level } = queue.shift()!;
       
       // Ensure we have this level
       while (levels.length <= level) {
         levels.push([]);
       }
       
-      levels[level].push(stackId);
+      levels[level].push(item);
       
       // Add children to next level
-      const stack = stacks[stackId];
+      const stack = stacks[item.stackId];
       for (const childId of stack.childStacks) {
         if (!visited.has(childId)) {
-          queue.push({ stackId: childId, level: level + 1 });
+          // Check if this child is part of a parallel group
+          const parallelGroup = stackToGroup.get(childId);
+          const isParallel = !!parallelGroup;
+          
+          queue.push({ 
+            item: { 
+              type: 'stack', 
+              stackId: childId, 
+              isParallel,
+              parallelGroupId: parallelGroup?.id 
+            }, 
+            level: level + 1 
+          });
+          visited.add(childId);
         }
       }
     }
     
     return levels;
-  }, [stacks, rootStacks]);
+  }, [stacks, rootStacks, stackToGroup]);
 
   if (Object.keys(stacks).length === 0) {
     return (
@@ -176,80 +191,106 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
       background: '#fafafa'
     }}>
       {/* Header with summary */}
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>
-          Commit Stack Graph
+      <div style={{ marginBottom: '24px' }}>
+        <h2 style={{ margin: '0 0 12px 0', fontSize: '20px', color: '#111827' }}>
+          📚 Commit Stack Graph
         </h2>
-        <div style={{ fontSize: '14px', color: '#6b7280' }}>
-          {Object.keys(stacks).length} stacks • {connections.length} connections
-        </div>
       </div>
 
-      {/* Stack layout */}
+      {/* Stack layout - vertical flow, newest on top */}
       <div style={{ 
-        display: 'flex', 
+        display: 'flex',
+        flexDirection: 'column',
         gap: '20px',
-        overflowX: 'auto',
-        minHeight: '400px'
+        overflowY: 'auto',
+        maxHeight: '80vh',
       }}>
-        {stackLevels.map((level, levelIndex) => (
-          <div key={levelIndex} style={{ 
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: '220px'
-          }}>
-            <div style={{ 
-              fontSize: '12px', 
-              fontWeight: 'bold', 
-              marginBottom: '12px',
-              color: '#6b7280'
+        {layoutLevels.slice().reverse().map((level, levelIndex) => {
+          const actualLevelIndex = layoutLevels.length - 1 - levelIndex;
+          return (
+          <div key={actualLevelIndex}>
+            {/* Stacks in this level - horizontal layout, centered */}
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              flexWrap: 'wrap',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              position: 'relative',
+              marginBottom: '20px',
             }}>
-              Level {levelIndex}
+              {level.map((item) => {
+                const stack = stacks[item.stackId];
+                
+                return (
+                  <div key={item.stackId} style={{ position: 'relative', minWidth: '280px' }}>
+                    <StackComponent 
+                      stack={stack} 
+                      commitGraph={commitGraph}
+                      isInParallelGroup={item.isParallel}
+                    />
+                  </div>
+                );
+              })}
             </div>
-            {level.map(stackId => (
-              <StackComponent 
-                key={stackId} 
-                stack={stacks[stackId]} 
-                commitGraph={commitGraph}
-              />
-            ))}
           </div>
-        ))}
+        );})}
       </div>
 
-      {/* Connections summary */}
+      {/* Connections summary - simplified */}
       {connections.length > 0 && (
-        <div style={{ marginTop: '20px' }}>
-          <h3 style={{ fontSize: '14px', marginBottom: '8px', color: '#374151' }}>
-            Connections
-          </h3>
-          <div style={{ 
-            display: 'flex', 
-            flexWrap: 'wrap', 
-            gap: '8px',
-            maxHeight: '200px',
-            overflowY: 'auto',
-            padding: '8px',
+        <div style={{ marginTop: '24px' }}>
+          <details style={{ 
             background: 'white',
-            borderRadius: '4px',
-            border: '1px solid #e5e7eb'
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb',
+            padding: '16px',
           }}>
-            {connections.map((connection, index) => (
-              <ConnectionComponent key={index} connection={connection} />
-            ))}
-          </div>
+            <summary style={{ 
+              fontSize: '14px', 
+              fontWeight: '600', 
+              color: '#374151',
+              cursor: 'pointer',
+              marginBottom: '8px',
+            }}>
+              View All Connections ({connections.length})
+            </summary>
+            <div style={{ 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              gap: '8px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+              marginTop: '12px',
+            }}>
+              {connections.map((connection, index) => (
+                <ConnectionComponent key={index} connection={connection} />
+              ))}
+            </div>
+          </details>
         </div>
       )}
 
-      {/* Debug info */}
-      <div style={{ 
-        marginTop: '16px', 
-        fontSize: '11px', 
+      {/* Debug info - less prominent */}
+      <details style={{ 
+        marginTop: '16px',
+        fontSize: '11px',
         color: '#9ca3af',
-        fontFamily: 'monospace'
       }}>
-        Root stacks: {rootStacks.join(', ')} • Leaf stacks: {leafStacks.join(', ')}
-      </div>
+        <summary style={{ cursor: 'pointer', fontSize: '12px' }}>
+          Debug Info
+        </summary>
+        <div style={{ 
+          fontFamily: 'monospace',
+          marginTop: '8px',
+          padding: '8px',
+          background: '#f9fafb',
+          borderRadius: '4px',
+        }}>
+          Root stacks: {rootStacks.join(', ')}<br/>
+          Leaf stacks: {leafStacks.join(', ')}
+        </div>
+      </details>
     </div>
   );
 }

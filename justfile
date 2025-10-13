@@ -1,6 +1,6 @@
 [working-directory: 'backend']
 run-backend:
-    node ./src/index.ts
+    npm run dev
 
 [working-directory: 'frontend']
 run-frontend:

@@ -13,7 +13,7 @@ export type Description = string & { readonly [DescriptionBrand]: true };
 export function createCommitId(value: string): CommitId {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length !== 40) {
-    throw new Error(`Invalid commit ID: ${value}`);
+    throw new Error(`Invalid commit ID: ${value} (length: ${trimmed.length}, expected 40)`);
   }
   return trimmed as CommitId;
 }
@@ -68,11 +68,16 @@ export function parseJjLog(logOutput: string): Commit[] {
   const lines = logOutput.trim().split('\n');
   const commits: Commit[] = [];
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) {
+      throw new Error(`Empty line at index ${i} in jj log output`);
+    }
     
     const parts = line.split('|');
-    if (parts.length < 6) continue;
+    if (parts.length < 6) {
+      throw new Error(`Line ${i} has ${parts.length} parts, expected at least 6. Line: "${line}"`);
+    }
 
     const [id, description, authorName, authorEmail, timestamp, parentsStr] = parts;
     
@@ -106,7 +111,7 @@ export function parseJjLog(logOutput: string): Commit[] {
  * Helper function to execute the jj log command and parse its output
  */
 export async function getRepositoryCommits(): Promise<Commit[]> {
-  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
+  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
   
   return parseJjLog(stdout);
 }
