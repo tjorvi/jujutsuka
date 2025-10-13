@@ -29,7 +29,7 @@ export function createEmail(value: string): Email {
 export function createDescription(value: string): Description {
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new Error(`Invalid description: ${value}`);
+    return '(no description)' as Description;
   }
   return trimmed as Description;
 }
@@ -79,27 +79,21 @@ export function parseJjLog(logOutput: string): Commit[] {
     // Skip the root commit (all zeros)
     if (id.trim() === '0000000000000000000000000000000000000000') continue;
 
-    try {
-      const parents = parentsStr ? 
-        parentsStr.split(',')
-          .filter(p => p.trim() !== '')
-          .map(p => createCommitId(p.trim())) : [];
+    const parents = parentsStr ? 
+      parentsStr.split(',')
+        .filter(p => p.trim() !== '')
+        .map(p => createCommitId(p.trim())) : [];
 
-      commits.push({
-        id: createCommitId(id),
-        description: createDescription(description),
-        author: {
-          name: authorName.trim(),
-          email: createEmail(authorEmail),
-        },
-        timestamp: parseTimestamp(timestamp),
-        parents,
-      });
-    } catch (error) {
-      console.warn(`Failed to parse commit line: ${line}`, error);
-      // Skip malformed commits
-      continue;
-    }
+    commits.push({
+      id: createCommitId(id),
+      description: createDescription(description),
+      author: {
+        name: authorName.trim(),
+        email: createEmail(authorEmail),
+      },
+      timestamp: parseTimestamp(timestamp),
+      parents,
+    });
   }
 
   return commits;
@@ -108,32 +102,30 @@ export function parseJjLog(logOutput: string): Commit[] {
 /**
  * Helper function to execute the jj log command and parse its output
  */
+/**
+ * Helper function to execute the jj log command and parse its output
+ */
 export async function getRepositoryCommits(): Promise<Commit[]> {
-  try {
-    const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
-    
-    return parseJjLog(stdout);
-  } catch (error) {
-    console.error('Failed to get repository commits:', error);
-    return [];
-  }
+  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
+  
+  return parseJjLog(stdout);
 }
 
 /**
  * Build a commit graph from the parsed commits
  */
-export function buildCommitGraph(commits: Commit[]): Map<CommitId, { commit: Commit; children: CommitId[] }> {
-  const graph = new Map<CommitId, { commit: Commit; children: CommitId[] }>();
+export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: Commit; children: CommitId[] }> {
+  const graph: Record<CommitId, { commit: Commit; children: CommitId[] }> = {};
   
   // Initialize all commits in the graph
   for (const commit of commits) {
-    graph.set(commit.id, { commit, children: [] });
+    graph[commit.id] = { commit, children: [] };
   }
   
   // Build parent-child relationships
   for (const commit of commits) {
     for (const parentId of commit.parents) {
-      const parent = graph.get(parentId);
+      const parent = graph[parentId];
       if (parent) {
         parent.children.push(commit.id);
       }

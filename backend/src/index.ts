@@ -1,11 +1,13 @@
 import { publicProcedure, router } from './trpc.ts';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
-import { $ } from 'execa';
+import { buildCommitGraph, getRepositoryCommits } from './repo-parser.ts';
  
 const appRouter = router({
-  changes: publicProcedure
+  graph: publicProcedure
     .query(async () => {
-        await $`jj log --no-graph --template 'commit_id ++ "|" ++ description ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\n"'`;
+        const commits = await getRepositoryCommits();
+        const graph = buildCommitGraph(commits);
+        return graph;
     }),
 });
 

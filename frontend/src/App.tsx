@@ -1,15 +1,16 @@
 import { trpc, useQuery } from './api'
 import './App.css'
+import { CommitGraph } from './CommitGraph';
 
 function App() {
-  const test = useQuery(trpc.test, undefined);
+  const graph = useQuery(trpc.graph, undefined);
 
   return (
     <>
-    {test.kind === 'loading' && <p>Loading...</p>}
-    {test.kind === 'error' && <p>Error: {String(test.error)}</p>}
-    {test.kind === 'success' && <p>Success: {test.data}</p>}
-    {test.kind === 'idle' && <p>Idle</p>}
+    {graph.kind === 'loading' && <p>Loading...</p>}
+    {graph.kind === 'error' && <p>Error: {String(graph.error)}</p>}
+    {graph.kind === 'success' && <CommitGraph graph={graph.data} />}
+    {graph.kind === 'idle' && <p>Idle</p>}
     </>
   )
 }

@@ -61,12 +61,14 @@ describe('branded type transforms', () => {
       expect(desc).toBe('Test commit');
     });
 
-    it('should throw on empty string', () => {
-      expect(() => createDescription('')).toThrow('Invalid description');
+    it('should return default for empty string', () => {
+      const desc = createDescription('');
+      expect(desc).toBe('(no description)');
     });
 
-    it('should throw on whitespace-only string', () => {
-      expect(() => createDescription('   ')).toThrow('Invalid description');
+    it('should return default for whitespace-only string', () => {
+      const desc = createDescription('   ');
+      expect(desc).toBe('(no description)');
     });
   });
 
@@ -176,28 +178,34 @@ malformed|line
     expect(commits[0].parents[0]).toBe('1234567890123456789012345678901234567890');
   });
 
-  it('should handle invalid commit IDs', () => {
+  it('should throw on invalid commit IDs', () => {
     const logOutput = 'invalid-id|Description|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|';
     
-    const commits = parseJjLog(logOutput);
-    
-    expect(commits).toHaveLength(0); // Should skip invalid commits
+    expect(() => parseJjLog(logOutput)).toThrow('Invalid commit ID');
   });
 
-  it('should handle invalid emails', () => {
+  it('should throw on invalid emails', () => {
     const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|Description|Author|invalid-email|2025-10-13 21:31:04.000 +00:00|';
     
-    const commits = parseJjLog(logOutput);
-    
-    expect(commits).toHaveLength(0); // Should skip invalid commits
+    expect(() => parseJjLog(logOutput)).toThrow('Invalid email');
   });
 
-  it('should handle invalid timestamps', () => {
+  it('should throw on invalid timestamps', () => {
     const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|Description|Author|author@example.com|invalid-timestamp|';
+    
+    expect(() => parseJjLog(logOutput)).toThrow('Unable to parse timestamp');
+  });
+
+  it('should handle empty descriptions', () => {
+    const logOutput = '28571ac8a11052def1977fcce769181cd2ba16b7||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:55:24.264 +00:00|9c458eafe2fafd597d62cac332e0f03a0ab0bb2c';
     
     const commits = parseJjLog(logOutput);
     
-    expect(commits).toHaveLength(0); // Should skip invalid commits
+    expect(commits).toHaveLength(1);
+    expect(commits[0].id).toBe('28571ac8a11052def1977fcce769181cd2ba16b7');
+    expect(commits[0].description).toBe('(no description)');
+    expect(commits[0].author.name).toBe('Tjörvi Jóhannsson');
+    expect(commits[0].author.email).toBe('tjorvi@gmail.com');
   });
 });
 
@@ -229,20 +237,20 @@ describe('buildCommitGraph', () => {
   it('should build correct parent-child relationships', () => {
     const graph = buildCommitGraph(sampleCommits);
     
-    expect(graph.size).toBe(3);
+    expect(Object.keys(graph).length).toBe(3);
     
     const commit1Id = createCommitId('1111111111111111111111111111111111111111');
     const commit2Id = createCommitId('2222222222222222222222222222222222222222');
     const commit3Id = createCommitId('3333333333333333333333333333333333333333');
     
     // commit1 should have commit2 as child
-    expect(graph.get(commit1Id)?.children).toEqual([commit2Id]);
+    expect(graph[commit1Id]?.children).toEqual([commit2Id]);
     
     // commit2 should have commit3 as child
-    expect(graph.get(commit2Id)?.children).toEqual([commit3Id]);
+    expect(graph[commit2Id]?.children).toEqual([commit3Id]);
     
     // commit3 should have no children
-    expect(graph.get(commit3Id)?.children).toEqual([]);
+    expect(graph[commit3Id]?.children).toEqual([]);
   });
 
   it('should handle merge commits with multiple parents', () => {
@@ -280,15 +288,15 @@ describe('buildCommitGraph', () => {
     const commit3Id = createCommitId('3333333333333333333333333333333333333333');
     
     // Both commit1 and commit2 should have merge1 as child
-    expect(graph.get(commit1Id)?.children).toEqual([commit3Id]);
-    expect(graph.get(commit2Id)?.children).toEqual([commit3Id]);
-    expect(graph.get(commit3Id)?.children).toEqual([]);
+    expect(graph[commit1Id]?.children).toEqual([commit3Id]);
+    expect(graph[commit2Id]?.children).toEqual([commit3Id]);
+    expect(graph[commit3Id]?.children).toEqual([]);
   });
 
   it('should handle empty commit list', () => {
     const graph = buildCommitGraph([]);
     
-    expect(graph.size).toBe(0);
+    expect(Object.keys(graph).length).toBe(0);
   });
 
   it('should handle commits with non-existent parents', () => {
@@ -304,9 +312,9 @@ describe('buildCommitGraph', () => {
 
     const graph = buildCommitGraph(commitsWithMissingParent);
     
-    expect(graph.size).toBe(1);
+    expect(Object.keys(graph).length).toBe(1);
     const commitId = createCommitId('1111111111111111111111111111111111111111');
-    expect(graph.get(commitId)?.children).toEqual([]);
+    expect(graph[commitId]?.children).toEqual([]);
     // Should not crash when parent doesn't exist
   });
 });
