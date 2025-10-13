@@ -11,9 +11,10 @@
   },
   "dependencies": {
     "@trpc/client": "^11.6.0",
+    "@xyflow/react": "^12.8.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-flow": "^1.0.3",
+    "superjson": "^2.2.2",
     "ts-pattern": "^5.8.0"
   },
   "devDependencies": {

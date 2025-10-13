@@ -1,11 +1,13 @@
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '../../backend/src/index';
 import { useEffect, useState } from 'react';
+import superjson from 'superjson';
 
 export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: '/trpc',
+      transformer: superjson,
     }),
   ],
 });
