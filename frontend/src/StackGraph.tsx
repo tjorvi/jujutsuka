@@ -248,12 +248,12 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
           const rect = element.getBoundingClientRect();
           const scrollRect = scrollContainer.getBoundingClientRect();
           
-          // Calculate position relative to the scroll container with actual bounds
+          // Calculate position within the scroll container, accounting for scroll offset
           positions[stackId] = {
             x: rect.left - scrollRect.left + rect.width / 2,
-            y: rect.top - scrollRect.top + rect.height / 2,
-            top: rect.top - scrollRect.top,
-            bottom: rect.top - scrollRect.top + rect.height
+            y: rect.top - scrollRect.top + scrollContainer.scrollTop + rect.height / 2,
+            top: rect.top - scrollRect.top + scrollContainer.scrollTop,
+            bottom: rect.top - scrollRect.top + scrollContainer.scrollTop + rect.height
           };
         }
       });
