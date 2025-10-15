@@ -12,6 +12,7 @@
   "dependencies": {
     "@trpc/client": "^11.6.0",
     "@xyflow/react": "^12.8.6",
+    "immer": "^10.1.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "superjson": "^2.2.2",

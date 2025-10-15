@@ -21,6 +21,10 @@ export const queries = {
   evolog: trpc.evolog,
 } as const;
 
+export const mutations = {
+  executeCommand: trpc.executeCommand,
+} as const;
+
 type KindedObject = { kind: string }
 type Loading = { kind: 'loading' };
 type Idle = { kind: 'idle' };

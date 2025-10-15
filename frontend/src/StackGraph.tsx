@@ -1,6 +1,7 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import type { Stack, StackId, CommitId, Commit, FileChange } from "../../backend/src/repo-parser";
-import type { ParallelGroup, LayoutStackGraph } from "../../backend/src/layout-utils";
+import type { CommitId, Commit } from "../../backend/src/repo-parser";
+import type { Stack, StackId } from "./stackUtils";
+import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
 
 interface StackComponentProps {
@@ -426,6 +427,11 @@ export function StackGraphComponent({
   selectedCommitId?: CommitId;
   onCommitSelect: (commitId: CommitId) => void;
 }) {
+  // Log when commit graph changes to track optimistic updates
+  useEffect(() => {
+    console.log('📊 StackGraphComponent received new commitGraph with keys:', Object.keys(commitGraph));
+  }, [commitGraph]);
+
   const { stacks, connections, rootStacks, leafStacks, parallelGroups } = stackGraph;
   const containerRef = useRef<HTMLDivElement>(null);
   const [stackPositions, setStackPositions] = useState<Record<StackId, { x: number; y: number; top: number; bottom: number }>>({});
