@@ -2,6 +2,7 @@ import { queries, useQuery } from './api'
 import './App.css'
 import { StackGraphComponent } from './StackGraph';
 import { FileListPanel } from './FileListPanel';
+import { DragDropProvider } from './DragDropContext';
 import { useState } from 'react';
 import type { CommitId } from "../../backend/src/repo-parser";
 
@@ -15,7 +16,7 @@ function App() {
   const isSuccess = stacks.kind === 'success' && graph.kind === 'success';
 
   return (
-    <>
+    <DragDropProvider>
       {/* Header */}
       <div style={{ padding: '20px', borderBottom: '1px solid #e5e7eb' }}>
         <h1 style={{ margin: '0', fontSize: '24px' }}>
@@ -49,7 +50,7 @@ function App() {
         {/* File list panel */}
         <FileListPanel selectedCommitId={selectedCommitId} />
       </div>
-    </>
+    </DragDropProvider>
   )
 }
 

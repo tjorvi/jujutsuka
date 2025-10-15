@@ -1,11 +1,14 @@
 import { queries, useQuery } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
+import { useDragDrop } from './DragDropContext';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
 }
 
 export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
+  const { draggedFile, setDraggedFile, setDraggedFromCommit } = useDragDrop();
+  
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
     queries.fileChanges, 
@@ -115,6 +118,17 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
             fileChanges.data.map((fileChange, index) => (
               <div 
                 key={index}
+                draggable={true}
+                onDragStart={(e) => {
+                  setDraggedFile(fileChange);
+                  setDraggedFromCommit(selectedCommitId!);
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', `${fileChange.path}:${fileChange.status}`);
+                }}
+                onDragEnd={() => {
+                  setDraggedFile(null);
+                  setDraggedFromCommit(null);
+                }}
                 style={{
                   padding: '8px 12px',
                   background: 'white',
@@ -124,16 +138,21 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
                   alignItems: 'center',
                   gap: '8px',
                   fontSize: '13px',
-                  cursor: 'pointer',
+                  cursor: draggedFile ? 'grabbing' : 'grab',
                   transition: 'all 0.2s ease',
+                  opacity: draggedFile?.path === fileChange.path ? 0.5 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#9ca3af';
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  if (!draggedFile) {
+                    e.currentTarget.style.borderColor = '#9ca3af';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                  e.currentTarget.style.boxShadow = 'none';
+                  if (!draggedFile) {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }
                 }}
               >
                 <span style={{ fontSize: '16px' }}>
