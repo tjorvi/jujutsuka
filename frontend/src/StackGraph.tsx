@@ -13,20 +13,27 @@ interface StackComponentProps {
 
 interface DropZoneProps {
   onDrop: (draggedFile: FileChange, draggedFromCommit: CommitId) => void;
+  onCommitDrop?: (draggedCommitId: CommitId, action: 'rebase-before' | 'rebase-after') => void;
   position: 'before' | 'after' | 'branch';
   stackId?: StackId;
   commitId?: CommitId;
   children?: React.ReactNode;
 }
 
-function DropZone({ onDrop, position, children }: DropZoneProps) {
-  const { draggedFile, draggedFromCommit } = useDragDrop();
+function DropZone({ onDrop, onCommitDrop, position, children }: DropZoneProps) {
+  const { draggedFile, draggedFromCommit, draggedCommit } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
   
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsOver(false);
-    onDrop(draggedFile!, draggedFromCommit!);
+    
+    if (draggedFile && draggedFromCommit) {
+      onDrop(draggedFile, draggedFromCommit);
+    } else if (draggedCommit && onCommitDrop) {
+      const action = position === 'before' ? 'rebase-before' : 'rebase-after';
+      onCommitDrop(draggedCommit, action);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -67,9 +74,9 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: draggedFile ? (isOver ? 1 : 0.7) : 0,
+        opacity: (draggedFile || draggedCommit) ? (isOver ? 1 : 0.7) : 0,
         fontSize: '20px',
-        pointerEvents: draggedFile ? 'auto' as const : 'none' as const,
+        pointerEvents: (draggedFile || draggedCommit) ? 'auto' as const : 'none' as const,
       };
     }
 
@@ -81,8 +88,8 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
       borderRadius: '2px',
       border: isOver ? '2px dashed #059669' : '1px dashed #9ca3af',
       margin: '4px 0',
-      opacity: draggedFile ? (isOver ? 1 : 0.3) : 0,
-      pointerEvents: draggedFile ? 'auto' as const : 'none' as const,
+      opacity: (draggedFile || draggedCommit) ? (isOver ? 1 : 0.3) : 0,
+      pointerEvents: (draggedFile || draggedCommit) ? 'auto' as const : 'none' as const,
     };
   };
 
@@ -91,10 +98,10 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
       <div style={{ position: 'relative' }}>
         {children}
         <div
-          onDrop={draggedFile ? handleDrop : undefined}
-          onDragOver={draggedFile ? handleDragOver : undefined}
-          onDragEnter={draggedFile ? handleDragEnter : undefined}
-          onDragLeave={draggedFile ? handleDragLeave : undefined}
+          onDrop={(draggedFile || draggedCommit) ? handleDrop : undefined}
+          onDragOver={(draggedFile || draggedCommit) ? handleDragOver : undefined}
+          onDragEnter={(draggedFile || draggedCommit) ? handleDragEnter : undefined}
+          onDragLeave={(draggedFile || draggedCommit) ? handleDragLeave : undefined}
           style={getDropZoneStyle()}
           title="Drop to create new branch"
         >
@@ -108,10 +115,10 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
     <>
       {position === 'before' && (
         <div
-          onDrop={draggedFile ? handleDrop : undefined}
-          onDragOver={draggedFile ? handleDragOver : undefined}
-          onDragEnter={draggedFile ? handleDragEnter : undefined}
-          onDragLeave={draggedFile ? handleDragLeave : undefined}
+          onDrop={(draggedFile || draggedCommit) ? handleDrop : undefined}
+          onDragOver={(draggedFile || draggedCommit) ? handleDragOver : undefined}
+          onDragEnter={(draggedFile || draggedCommit) ? handleDragEnter : undefined}
+          onDragLeave={(draggedFile || draggedCommit) ? handleDragLeave : undefined}
           style={getDropZoneStyle()}
           title={`Drop to move ${position} this change`}
         />
@@ -119,10 +126,10 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
       {children}
       {position === 'after' && (
         <div
-          onDrop={draggedFile ? handleDrop : undefined}
-          onDragOver={draggedFile ? handleDragOver : undefined}
-          onDragEnter={draggedFile ? handleDragEnter : undefined}
-          onDragLeave={draggedFile ? handleDragLeave : undefined}
+          onDrop={(draggedFile || draggedCommit) ? handleDrop : undefined}
+          onDragOver={(draggedFile || draggedCommit) ? handleDragOver : undefined}
+          onDragEnter={(draggedFile || draggedCommit) ? handleDragEnter : undefined}
+          onDragLeave={(draggedFile || draggedCommit) ? handleDragLeave : undefined}
           style={getDropZoneStyle()}
           title={`Drop to move ${position} this change`}
         />
@@ -132,13 +139,19 @@ function DropZone({ onDrop, position, children }: DropZoneProps) {
 }
 
 function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, onCommitSelect }: StackComponentProps) {
-  const { draggedFile, draggedFromCommit } = useDragDrop();
+  const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
 
   const handleDrop = (draggedFile: FileChange, draggedFromCommit: CommitId) => {
     console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to stack:', stack.id);
     // TODO: Implement the actual drop logic here
     // This would involve calling a backend API to move the file change
+  };
+
+  const handleCommitDrop = (draggedCommitId: CommitId, targetCommitId: CommitId, action: 'squash' | 'rebase-before' | 'rebase-after') => {
+    console.log(`Commit ${action}:`, draggedCommitId, 'to', targetCommitId);
+    // TODO: Implement the actual commit operation logic here
+    setDraggedCommit(null);
   };
 
   return (
@@ -166,6 +179,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
       {/* Top drop zone for new commits at the top of the stack */}
       <DropZone
         onDrop={handleDrop}
+        onCommitDrop={(draggedCommitId, action) => handleCommitDrop(draggedCommitId, stack.commits[0], action)}
         position="before"
         stackId={stack.id}
       />
@@ -177,11 +191,14 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const isSelected = selectedCommitId === commitId;
         const isDragTarget = draggedFile && draggedFromCommit !== commitId;
         const isHovered = hoveredCommitId === commitId;
+        const isBeingDragged = draggedCommit === commitId;
+        const isCommitDropTarget = draggedCommit && draggedCommit !== commitId;
         
         return (
           <DropZone
             key={commitId}
             onDrop={handleDrop}
+            onCommitDrop={(draggedCommitId, action) => handleCommitDrop(draggedCommitId, commitId, action)}
             position="after"
             commitId={commitId}
           >
@@ -194,25 +211,43 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
               commitId={commitId}
             >
               <div 
+                draggable={true}
+                onDragStart={(e: React.DragEvent) => {
+                  e.stopPropagation();
+                  setDraggedCommit(commitId);
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', commitId);
+                }}
+                onDragEnd={() => {
+                  setDraggedCommit(null);
+                  setHoveredCommitId(null);
+                }}
                 onClick={() => onCommitSelect(commitId)}
-                onDrop={!isSelected && draggedFile ? (e: React.DragEvent) => {
+                onDrop={!isSelected ? (e: React.DragEvent) => {
                   e.preventDefault();
                   e.stopPropagation();
                   setHoveredCommitId(null);
-                  console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to commit:', commitId);
-                  handleDrop(draggedFile, draggedFromCommit!);
+                  
+                  if (draggedFile && draggedFromCommit) {
+                    // Handle file drop
+                    console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to commit:', commitId);
+                    handleDrop(draggedFile, draggedFromCommit);
+                  } else if (draggedCommit) {
+                    // Handle commit drop (squash)
+                    handleCommitDrop(draggedCommit, commitId, 'squash');
+                  }
                 } : undefined}
-                onDragOver={!isSelected && draggedFile ? (e: React.DragEvent) => {
+                onDragOver={!isSelected && (draggedFile || draggedCommit) ? (e: React.DragEvent) => {
                   e.preventDefault();
                   e.stopPropagation();
                   e.dataTransfer.dropEffect = 'move';
                 } : undefined}
-                onDragEnter={!isSelected && draggedFile ? (e: React.DragEvent) => {
+                onDragEnter={!isSelected && (draggedFile || draggedCommit) ? (e: React.DragEvent) => {
                   e.preventDefault();
                   e.stopPropagation();
                   setHoveredCommitId(commitId);
                 } : undefined}
-                onDragLeave={!isSelected && draggedFile ? (e: React.DragEvent) => {
+                onDragLeave={!isSelected && (draggedFile || draggedCommit) ? (e: React.DragEvent) => {
                   e.preventDefault();
                   e.stopPropagation();
                   // Only clear hover if we're leaving the commit itself, not moving to a child
@@ -226,31 +261,44 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   background: isSelected 
                     ? '#e0f2fe' 
                     : isHovered 
-                      ? '#dcfce7' 
-                      : '#f8fafc',
+                      ? (draggedCommit ? '#fef3c7' : '#dcfce7') 
+                      : isBeingDragged
+                        ? '#f3f4f6'
+                        : '#f8fafc',
                   borderRadius: '4px',
                   borderLeft: isSelected 
                     ? '3px solid #0284c7'
                     : isInParallelGroup 
                       ? '3px solid #a855f7' 
                       : '3px solid #3b82f6',
-                  cursor: 'pointer',
+                  cursor: isBeingDragged ? 'grabbing' : 'grab',
                   transition: 'all 0.2s ease',
                   border: isSelected 
                     ? '1px solid #0284c7' 
                     : isHovered
-                      ? '2px solid #16a34a'
-                      : isDragTarget 
-                        ? '1px solid #10b981'
-                        : '1px solid transparent',
+                      ? (draggedCommit ? '2px solid #f59e0b' : '2px solid #16a34a')
+                      : isCommitDropTarget
+                        ? '1px dashed #f59e0b'
+                        : isDragTarget 
+                          ? '1px solid #10b981'
+                          : '1px solid transparent',
                   boxShadow: isSelected 
                     ? 'none'
                     : isHovered 
-                      ? '0 0 12px rgba(34, 197, 94, 0.4)'
-                      : isDragTarget 
-                        ? '0 0 8px rgba(16, 185, 129, 0.3)' 
-                        : 'none',
-                  transform: isHovered ? 'scale(1.02)' : 'scale(1)',
+                      ? (draggedCommit ? '0 0 12px rgba(245, 158, 11, 0.4)' : '0 0 12px rgba(34, 197, 94, 0.4)')
+                      : isBeingDragged
+                        ? '0 4px 12px rgba(0, 0, 0, 0.15)'
+                        : isCommitDropTarget
+                          ? '0 0 8px rgba(245, 158, 11, 0.3)'
+                          : isDragTarget 
+                            ? '0 0 8px rgba(16, 185, 129, 0.3)' 
+                            : 'none',
+                  transform: isHovered 
+                    ? 'scale(1.02)' 
+                    : isBeingDragged 
+                      ? 'scale(0.98) rotate(2deg)'
+                      : 'scale(1)',
+                  opacity: isBeingDragged ? 0.7 : 1,
                 }}
               >
                 <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
