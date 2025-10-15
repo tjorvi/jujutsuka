@@ -1,6 +1,6 @@
 import { queries, useQuery } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
-import { useDragDrop } from './DragDropContext';
+import { useDragDrop } from './useDragDrop';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;

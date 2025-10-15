@@ -1,7 +1,7 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
 import type { Stack, StackId, CommitId, Commit, FileChange } from "../../backend/src/repo-parser";
 import type { ParallelGroup, LayoutStackGraph } from "../../backend/src/layout-utils";
-import { useDragDrop } from './DragDropContext';
+import { useDragDrop } from './useDragDrop';
 
 interface StackComponentProps {
   stack: Stack;
@@ -12,16 +12,15 @@ interface StackComponentProps {
 }
 
 interface DropZoneProps {
-  onDrop: (draggedFile: FileChange, draggedFromCommit: CommitId) => void;
-  onCommitDrop?: (draggedCommitId: CommitId, action: 'rebase-before' | 'rebase-after') => void;
+  targetCommitId: CommitId;
   position: 'before' | 'after' | 'branch';
-  stackId?: StackId;
-  commitId?: CommitId;
+  beforeCommitId?: CommitId;
+  afterCommitId?: CommitId;
   children?: React.ReactNode;
 }
 
-function DropZone({ onDrop, onCommitDrop, position, children }: DropZoneProps) {
-  const { draggedFile, draggedFromCommit, draggedCommit } = useDragDrop();
+function DropZone({ targetCommitId, position, beforeCommitId, afterCommitId, children }: DropZoneProps) {
+  const { draggedFile, draggedFromCommit, draggedCommit, handleFileDrop, handleCommitDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
   
   const handleDrop = (e: React.DragEvent) => {
@@ -29,10 +28,16 @@ function DropZone({ onDrop, onCommitDrop, position, children }: DropZoneProps) {
     setIsOver(false);
     
     if (draggedFile && draggedFromCommit) {
-      onDrop(draggedFile, draggedFromCommit);
-    } else if (draggedCommit && onCommitDrop) {
-      const action = position === 'before' ? 'rebase-before' : 'rebase-after';
-      onCommitDrop(draggedCommit, action);
+      handleFileDrop(targetCommitId, position, beforeCommitId, afterCommitId);
+    } else if (draggedCommit) {
+      if (position === 'branch') {
+        // For branch drops, we could either rebase to a new branch or squash
+        // For now, let's default to creating a new branch
+        handleCommitDrop(targetCommitId, 'rebase-before'); // This might need adjustment
+      } else {
+        const action = position === 'before' ? 'rebase-before' : 'rebase-after';
+        handleCommitDrop(targetCommitId, action);
+      }
     }
   };
 
@@ -139,20 +144,8 @@ function DropZone({ onDrop, onCommitDrop, position, children }: DropZoneProps) {
 }
 
 function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, onCommitSelect }: StackComponentProps) {
-  const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit } = useDragDrop();
+  const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit, handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
-
-  const handleDrop = (draggedFile: FileChange, draggedFromCommit: CommitId) => {
-    console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to stack:', stack.id);
-    // TODO: Implement the actual drop logic here
-    // This would involve calling a backend API to move the file change
-  };
-
-  const handleCommitDrop = (draggedCommitId: CommitId, targetCommitId: CommitId, action: 'squash' | 'rebase-before' | 'rebase-after') => {
-    console.log(`Commit ${action}:`, draggedCommitId, 'to', targetCommitId);
-    // TODO: Implement the actual commit operation logic here
-    setDraggedCommit(null);
-  };
 
   return (
     <div style={{
@@ -178,10 +171,9 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
       
       {/* Top drop zone for new commits at the top of the stack */}
       <DropZone
-        onDrop={handleDrop}
-        onCommitDrop={(draggedCommitId, action) => handleCommitDrop(draggedCommitId, stack.commits[0], action)}
+        targetCommitId={stack.commits[0]}
         position="before"
-        stackId={stack.id}
+        afterCommitId={stack.commits[0]}
       />
       
       {stack.commits.slice().reverse().map((commitId, index) => {
@@ -194,21 +186,21 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const isBeingDragged = draggedCommit === commitId;
         const isCommitDropTarget = draggedCommit && draggedCommit !== commitId;
         
+        // For the "after" drop zone, we need to determine the next commit
+        const reversedCommits = stack.commits.slice().reverse();
+        const nextCommitId = reversedCommits[index + 1];
+        
         return (
           <DropZone
             key={commitId}
-            onDrop={handleDrop}
-            onCommitDrop={(draggedCommitId, action) => handleCommitDrop(draggedCommitId, commitId, action)}
+            targetCommitId={commitId}
             position="after"
-            commitId={commitId}
+            beforeCommitId={commitId}
+            afterCommitId={nextCommitId}
           >
             <DropZone
-              onDrop={(draggedFile, draggedFromCommit) => {
-                console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to create branch from commit:', commitId);
-                // TODO: Implement branch creation from specific commit
-              }}
+              targetCommitId={commitId}
               position="branch"
-              commitId={commitId}
             >
               <div 
                 draggable={true}
@@ -229,12 +221,12 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   setHoveredCommitId(null);
                   
                   if (draggedFile && draggedFromCommit) {
-                    // Handle file drop
+                    // Handle file drop - move to existing commit
                     console.log('Dropped file:', draggedFile, 'from commit:', draggedFromCommit, 'to commit:', commitId);
-                    handleDrop(draggedFile, draggedFromCommit);
+                    handleFileDrop(commitId, 'existing');
                   } else if (draggedCommit) {
                     // Handle commit drop (squash)
-                    handleCommitDrop(draggedCommit, commitId, 'squash');
+                    handleCommitDrop(commitId, 'squash');
                   }
                 } : undefined}
                 onDragOver={!isSelected && (draggedFile || draggedCommit) ? (e: React.DragEvent) => {
