@@ -18,6 +18,7 @@ export const queries = {
   stacks: trpc.stacks,
   layoutStacks: trpc.layoutStacks,
   fileChanges: trpc.fileChanges,
+  evolog: trpc.evolog,
 } as const;
 
 type KindedObject = { kind: string }

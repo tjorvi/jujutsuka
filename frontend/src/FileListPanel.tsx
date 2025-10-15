@@ -12,6 +12,11 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
     { commitId: selectedCommitId || '' }
   );
 
+  const evolog = useQuery(
+    queries.evolog, 
+    { commitId: selectedCommitId || '' }
+  );
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'M': return '📝'; // Modified
@@ -156,6 +161,86 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
                 </span>
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* Evolution Log Section */}
+      {selectedCommitId && (
+        <div style={{ marginTop: '24px' }}>
+          <h3 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            color: '#111827',
+            borderBottom: '1px solid #e5e7eb',
+            paddingBottom: '8px',
+          }}>
+            🔄 Evolution Log
+          </h3>
+
+          {evolog.kind === 'loading' && (
+            <div style={{ color: '#6b7280', fontSize: '14px' }}>
+              Loading evolution log...
+            </div>
+          )}
+
+          {evolog.kind === 'error' && (
+            <div style={{ color: '#ef4444', fontSize: '14px' }}>
+              Error loading evolution log: {String(evolog.error)}
+            </div>
+          )}
+
+          {evolog.kind === 'success' && (
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '8px',
+              overflowY: 'auto',
+              maxHeight: 'calc(40vh - 60px)',
+            }}>
+              {evolog.data.length === 0 ? (
+                <div style={{ color: '#6b7280', fontSize: '14px' }}>
+                  No evolution history
+                </div>
+              ) : (
+                evolog.data.map((entry, index) => (
+                  <div 
+                    key={index}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'white',
+                      borderRadius: '6px',
+                      border: '1px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    <div style={{ 
+                      fontWeight: 'bold', 
+                      color: '#374151', 
+                      marginBottom: '4px' 
+                    }}>
+                      {entry.commitId.slice(0, 8)}
+                    </div>
+                    {entry.description && (
+                      <div style={{ 
+                        color: '#6b7280', 
+                        marginBottom: '4px',
+                        fontSize: '11px'
+                      }}>
+                        {entry.description}
+                      </div>
+                    )}
+                    <div style={{ 
+                      color: '#9ca3af', 
+                      fontSize: '10px' 
+                    }}>
+                      {entry.operationDescription} ({entry.operationId.slice(0, 8)})
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
       )}

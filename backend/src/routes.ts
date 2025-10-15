@@ -4,6 +4,7 @@ import {
   buildStackGraph, 
   getRepositoryCommits,
   getCommitFileChanges,
+  getCommitEvolog,
   createCommitId
 } from './repo-parser.ts';
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
@@ -37,6 +38,15 @@ export const appRouter = router({
         const commitId = createCommitId(input.commitId);
         const fileChanges = await getCommitFileChanges(commitId);
         return fileChanges;
+    }),
+  evolog: publicProcedure
+    .input(z.object({
+      commitId: z.string()
+    }))
+    .query(async ({ input }) => {
+        const commitId = createCommitId(input.commitId);
+        const evolog = await getCommitEvolog(commitId);
+        return evolog;
     }),
 });
 

@@ -128,6 +128,16 @@ export interface FileChange {
 }
 
 /**
+ * Evolution log entry for a commit
+ */
+export interface EvoLogEntry {
+  commitId: CommitId;
+  description: Description;
+  operationId: string;
+  operationDescription: string;
+}
+
+/**
  * Get file changes for a specific commit
  */
 export async function getCommitFileChanges(commitId: CommitId): Promise<FileChange[]> {
@@ -155,6 +165,46 @@ export async function getCommitFileChanges(commitId: CommitId): Promise<FileChan
     return changes;
   } catch (error) {
     console.warn(`Failed to get file changes for commit ${commitId}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Get evolution log for a specific commit
+ */
+export async function getCommitEvolog(commitId: CommitId): Promise<EvoLogEntry[]> {
+  try {
+    // Use jj evolog with custom template to get parseable output
+    const template = 'commit.commit_id() ++ "|" ++ commit.description().first_line() ++ "|" ++ operation.id().short() ++ "|" ++ operation.description() ++ "\\n"';
+    const { stdout } = await $`jj evolog -r ${commitId} --no-graph --template ${template}`;
+    
+    const entries: EvoLogEntry[] = [];
+    const lines = stdout.trim().split('\n');
+    
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      
+      // Parse the pipe-separated format: commitId|description|operationId|operationDescription
+      const parts = line.split('|');
+      if (parts.length >= 4) {
+        const [fullCommitId, description, operationId, operationDescription] = parts;
+        
+        try {
+          entries.push({
+            commitId: createCommitId(fullCommitId.trim()),
+            description: createDescription(description.trim()),
+            operationId: operationId.trim(),
+            operationDescription: operationDescription.trim(),
+          });
+        } catch (error) {
+          console.warn(`Failed to parse evolog entry: ${line}`, error);
+        }
+      }
+    }
+    
+    return entries;
+  } catch (error) {
+    console.warn(`Failed to get evolog for commit ${commitId}:`, error);
     return [];
   }
 }
