@@ -1,8 +1,11 @@
-During early development do not hide errors by catching them and logging. Let the exceptions bubble out.
 
-Keep things simple. Try to fix and improve by simplifying before adding more complications.
+# Working methodology
+- During early development do not hide errors by catching them and logging. Let the exceptions bubble out.
+- Keep things simple. Try to fix and improve by simplifying before adding more complications.
 
-Refer to SPEC.md to understand the app functionality.
+# Functional specs
+- Refer to SPEC.md to understand the app functionality.
+- When asked to implement functional features see if it would be appropriate to amend SPEC.md
 
 # UIs
 - During early stages don't put in a lot of code for fancy graphics. Keep it all very sterile.

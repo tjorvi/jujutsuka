@@ -9,6 +9,7 @@ export default defineConfig({
       '/trpc': {
         target: 'http://localhost:3000', // The target backend server
         changeOrigin: true, // Needed for virtual hosted sites
+        rewrite: (path) => path.replace(/^\/trpc/, ''), // Remove /trpc prefix
       },
     },
   },

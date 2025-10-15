@@ -12,7 +12,10 @@ export type Description = string & { readonly [DescriptionBrand]: true };
 // Transform functions to create branded types
 export function createCommitId(value: string): CommitId {
   const trimmed = value.trim();
-  if (!trimmed || trimmed.length !== 40) {
+  if (!trimmed) {
+    throw new Error(`Empty commit ID`);
+  }
+  if (trimmed.length !== 40) {
     throw new Error(`Invalid commit ID: ${value} (length: ${trimmed.length}, expected 40)`);
   }
   return trimmed as CommitId;
@@ -114,6 +117,46 @@ export async function getRepositoryCommits(): Promise<Commit[]> {
   const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
   
   return parseJjLog(stdout);
+}
+
+/**
+ * File change information for a commit
+ */
+export interface FileChange {
+  path: string;
+  status: 'M' | 'A' | 'D' | 'R' | 'C'; // Modified, Added, Deleted, Renamed, Copied
+}
+
+/**
+ * Get file changes for a specific commit
+ */
+export async function getCommitFileChanges(commitId: CommitId): Promise<FileChange[]> {
+  try {
+    // Use jj diff with --summary to get file change information
+    const { stdout } = await $`jj diff -r ${commitId} --summary`;
+    
+    const changes: FileChange[] = [];
+    const lines = stdout.trim().split('\n');
+    
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      
+      // Parse the summary format: "M path/to/file" or "A path/to/file" etc.
+      const match = line.match(/^([MADRC])\s+(.+)$/);
+      if (match) {
+        const [, status, path] = match;
+        changes.push({
+          path: path.trim(),
+          status: status as FileChange['status']
+        });
+      }
+    }
+    
+    return changes;
+  } catch (error) {
+    console.warn(`Failed to get file changes for commit ${commitId}:`, error);
+    return [];
+  }
 }
 
 /**

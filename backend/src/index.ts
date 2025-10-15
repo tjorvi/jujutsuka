@@ -1,12 +1,13 @@
-import { publicProcedure, router } from './trpc.ts';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import { 
   buildCommitGraph, 
   buildStackGraph, 
-  getRepositoryCommits 
+  getRepositoryCommits
 } from './repo-parser.ts';
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
+import { appRouter } from './routes.ts';
 import process from 'node:process';
+import { router } from './trpc.ts';
 
 async function runCli() {
   const args = process.argv.slice(2);
@@ -59,31 +60,9 @@ async function runCli() {
   }
 }
 
-const appRouter = router({
-  graph: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
-        const graph = buildCommitGraph(commits);
-        return graph;
-    }),
-  stacks: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
-        const stackGraph = buildStackGraph(commits);
-        return stackGraph;
-    }),
-  layoutStacks: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
-        const stackGraph = buildStackGraph(commits);
-        const enhancedStackGraph = enhanceStackGraphForLayout(stackGraph);
-        return enhancedStackGraph;
-    }),
-});
-
-// Export type router type signature,
+// Export type router type signature from routes,
 // NOT the router itself.
-export type AppRouter = typeof appRouter;
+export type { AppRouter } from './routes.ts';
 
 // Check if running in CLI mode
 if (process.argv.length > 2) {
@@ -93,6 +72,10 @@ if (process.argv.length > 2) {
   console.log('Starting web server on http://localhost:3000');
   const server = createHTTPServer({
     router: appRouter,
+    createContext: () => ({}),
+    batching: {
+      enabled: true,
+    },
   });
    
   server.listen(3000);

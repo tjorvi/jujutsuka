@@ -1,16 +1,24 @@
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '../../backend/src/index';
+import { createTRPCClient, httpLink } from '@trpc/client';
+import type { AppRouter } from '../../backend/src/routes';
 import { useEffect, useState } from 'react';
 import superjson from 'superjson';
 
 export const trpc = createTRPCClient<AppRouter>({
   links: [
-    httpBatchLink({
-      url: '/trpc',
+    httpLink({
+      url: '/trpc', // Frontend calls /trpc, proxy rewrites to backend root
       transformer: superjson,
     }),
   ],
 });
+
+// Create stable references for queries to avoid endless re-renders
+export const queries = {
+  graph: trpc.graph,
+  stacks: trpc.stacks,
+  layoutStacks: trpc.layoutStacks,
+  fileChanges: trpc.fileChanges,
+} as const;
 
 type KindedObject = { kind: string }
 type Loading = { kind: 'loading' };
@@ -52,7 +60,8 @@ export function useQuery<Parameters, R>(
             controller.abort();
             setState({ kind: 'idle' });
         }
-    }, [input, query]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [JSON.stringify(input), query]);
 
 
     return state;

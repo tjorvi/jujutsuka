@@ -6,9 +6,11 @@ interface StackComponentProps {
   stack: Stack;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
   isInParallelGroup?: boolean;
+  selectedCommitId?: CommitId;
+  onCommitSelect: (commitId: CommitId) => void;
 }
 
-function StackComponent({ stack, commitGraph, isInParallelGroup = false }: StackComponentProps) {
+function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, onCommitSelect }: StackComponentProps) {
   return (
     <div style={{
       border: isInParallelGroup ? '2px solid #a855f7' : '2px solid #3b82f6',
@@ -34,16 +36,27 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false }: Stack
         const commit = commitGraph[commitId]?.commit;
         if (!commit) return null;
         
+        const isSelected = selectedCommitId === commitId;
+        
         return (
-          <div key={commitId} style={{
-            padding: '8px',
-            marginBottom: index < stack.commits.length - 1 ? '4px' : '0',
-            background: '#f8fafc',
-            borderRadius: '4px',
-            borderLeft: isInParallelGroup 
-              ? '3px solid #a855f7' 
-              : '3px solid #3b82f6',
-          }}>
+          <div 
+            key={commitId} 
+            onClick={() => onCommitSelect(commitId)}
+            style={{
+              padding: '8px',
+              marginBottom: index < stack.commits.length - 1 ? '4px' : '0',
+              background: isSelected ? '#e0f2fe' : '#f8fafc',
+              borderRadius: '4px',
+              borderLeft: isSelected 
+                ? '3px solid #0284c7'
+                : isInParallelGroup 
+                  ? '3px solid #a855f7' 
+                  : '3px solid #3b82f6',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: isSelected ? '1px solid #0284c7' : '1px solid transparent',
+            }}
+          >
             <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
               {commitId.slice(0, 8)}
             </div>
@@ -164,13 +177,24 @@ function ConnectionComponent({ connection }: ConnectionComponentProps) {
   );
 }
 
-export function StackGraphComponent({ stackGraph, commitGraph }: { 
+export function StackGraphComponent({ 
+  stackGraph, 
+  commitGraph, 
+  selectedCommitId, 
+  onCommitSelect 
+}: { 
   stackGraph: LayoutStackGraph;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
+  selectedCommitId?: CommitId;
+  onCommitSelect: (commitId: CommitId) => void;
 }) {
   const { stacks, connections, rootStacks, leafStacks, parallelGroups } = stackGraph;
   const containerRef = useRef<HTMLDivElement>(null);
   const [stackPositions, setStackPositions] = useState<Record<StackId, { x: number; y: number; top: number; bottom: number }>>({});
+  
+  const handleCommitSelect = (commitId: CommitId) => {
+    onCommitSelect(commitId);
+  };
   
   // Create a map to quickly find which parallel group a stack belongs to
   const stackToGroup = useMemo(() => {
@@ -382,6 +406,8 @@ export function StackGraphComponent({ stackGraph, commitGraph }: {
                       stack={stack} 
                       commitGraph={commitGraph}
                       isInParallelGroup={item.isParallel}
+                      selectedCommitId={selectedCommitId}
+                      onCommitSelect={handleCommitSelect}
                     />
                   </div>
                 );

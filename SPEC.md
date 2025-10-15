@@ -7,3 +7,6 @@ Drag connectors to rebase
 Drag nodes to re-order
 
 Show node evologs and allow to split there
+
+When clicking on changes show the changed files in a panel. Show the evolog below the files.
+
