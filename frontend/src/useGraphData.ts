@@ -37,6 +37,24 @@ export function useGraphData() {
     
     // Build stack graph using the same logic as backend
     const rawStackGraph = buildStackGraph(commits);
+    
+    // Log detailed stack graph structure
+    console.log('\n📊 Frontend Stack Graph:');
+    for (const [stackId, stack] of Object.entries(rawStackGraph.stacks)) {
+      const commitDescs = stack.commits.map(cid => {
+        const node = commitGraph[cid];
+        return node ? node.commit.description.substring(0, 40) : cid.substring(0, 8);
+      }).join(', ');
+      console.log(`  ${stackId}: [${stack.commits.length} commit${stack.commits.length > 1 ? 's' : ''}] ${commitDescs}`);
+      if (stack.parentStacks.length > 0) {
+        console.log(`    ↑ from: ${stack.parentStacks.join(', ')}`);
+      }
+      if (stack.childStacks.length > 0) {
+        console.log(`    ↓ to: ${stack.childStacks.join(', ')}`);
+      }
+    }
+    console.log('');
+    
     console.log('🔧 useGraphData: Raw stack graph:', {
       stacks: Object.keys(rawStackGraph.stacks).length,
       connections: rawStackGraph.connections.length,
