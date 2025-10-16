@@ -11,7 +11,7 @@ function App() {
     isLoading, 
     hasError, 
     isSuccess, 
-    isOptimistic,
+    isExecutingCommand,
     error, 
     stackGraph, 
     commitGraph 
@@ -22,8 +22,8 @@ function App() {
     <DragDropProvider>
       {/* Header */}
       <div style={{ padding: '20px', borderBottom: '1px solid #e5e7eb' }}>
-        <h1 style={{ margin: '0', fontSize: '24px' }}>
-          📚 Jujutsu Stacks {isOptimistic && <span style={{ color: '#f59e0b', fontSize: '14px' }}>(optimistic)</span>}
+                <h1 style={{ margin: '0', fontSize: '24px' }}>
+          📚 Jujutsu Stacks {isExecutingCommand && <span style={{ color: '#f59e0b', fontSize: '14px' }}>(executing...)</span>}
         </h1>
       </div>
 

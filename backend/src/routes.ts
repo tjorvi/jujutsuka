@@ -5,7 +5,10 @@ import {
   getRepositoryCommits,
   getCommitFileChanges,
   getCommitEvolog,
-  createCommitId
+  createCommitId,
+  executeRebase,
+  executeSquash,
+  executeSplit
 } from './repo-parser.ts';
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
 import { z } from 'zod';
@@ -96,13 +99,76 @@ export const appRouter = router({
     .mutation(async ({ input }) => {
       const command = input.command as GitCommand;
       
-      // For now, just log the command - in the future this would execute jj commands
       console.log('🚀 Executing command:', command);
       
-      // Simulate command execution delay
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      return { success: true, message: `Command ${command.type} executed successfully` };
+      try {
+        if (command.type === 'rebase') {
+          const commitId = createCommitId(command.commitId);
+          let target;
+          
+          if (command.target.type === 'before' || command.target.type === 'after') {
+            target = {
+              type: command.target.type,
+              commitId: createCommitId(command.target.commitId)
+            };
+          } else if (command.target.type === 'new-branch') {
+            target = {
+              type: command.target.type,
+              fromCommitId: createCommitId(command.target.fromCommitId)
+            };
+          } else {
+            throw new Error(`Unsupported rebase target type: ${command.target.type}`);
+          }
+          
+          await executeRebase(commitId, target);
+          
+        } else if (command.type === 'squash') {
+          const sourceCommitId = createCommitId(command.sourceCommitId);
+          const targetCommitId = createCommitId(command.targetCommitId);
+          await executeSquash(sourceCommitId, targetCommitId);
+          
+        } else if (command.type === 'split') {
+          const sourceCommitId = createCommitId(command.sourceCommitId);
+          let target;
+          
+          if (command.target.type === 'before' || command.target.type === 'after') {
+            target = {
+              type: command.target.type,
+              commitId: createCommitId(command.target.commitId)
+            };
+          } else if (command.target.type === 'new-branch') {
+            target = {
+              type: command.target.type,
+              fromCommitId: createCommitId(command.target.fromCommitId)
+            };
+          } else if (command.target.type === 'new-commit-between') {
+            target = {
+              type: command.target.type,
+              beforeCommitId: createCommitId(command.target.beforeCommitId),
+              afterCommitId: createCommitId(command.target.afterCommitId)
+            };
+          } else if (command.target.type === 'existing-commit') {
+            target = {
+              type: command.target.type,
+              commitId: createCommitId(command.target.commitId)
+            };
+          } else {
+            throw new Error(`Unsupported split target type: ${command.target.type}`);
+          }
+          
+          await executeSplit(sourceCommitId, command.files, target);
+          
+        } else {
+          throw new Error(`Unknown command type: ${(command as any).type}`);
+        }
+        
+        console.log('✅ Command executed successfully');
+        return { success: true, message: `Command ${command.type} executed successfully` };
+        
+      } catch (error) {
+        console.error('❌ Command execution failed:', error);
+        throw new Error(`Failed to execute ${command.type} command: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }),
 });
 

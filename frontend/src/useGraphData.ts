@@ -9,17 +9,24 @@ import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
 export function useGraphData() {
   const graphQuery = useQuery(queries.graph, undefined);
   const setCommitGraph = useGraphStore(state => state.setCommitGraph);
-  const isOptimistic = useGraphStore(state => state.isOptimistic);
+  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
   
+  // Debug command execution state changes
+  useEffect(() => {
+    console.log('📊 useGraphData - isExecutingCommand changed:', isExecutingCommand);
+    if (commitGraph) {
+      console.log('📊 useGraphData - commitGraph keys:', Object.keys(commitGraph).length);
+    }
+  }, [isExecutingCommand, commitGraph]);
+
   // Sync successful queries to the store
   useEffect(() => {
     if (graphQuery.kind === 'success') {
+      console.log('📊 Syncing query data to store');
       setCommitGraph(graphQuery.data);
     }
-  }, [graphQuery, setCommitGraph]);
-
-  // Compute stack graph from commit graph (memoized)
+  }, [graphQuery, setCommitGraph]);  // Compute stack graph from commit graph (memoized)
   const stackGraph = useMemo(() => {
     if (!commitGraph) return null;
     
@@ -44,7 +51,7 @@ export function useGraphData() {
     isLoading,
     hasError,
     isSuccess,
-    isOptimistic,
+    isExecutingCommand,
     error: hasError ? graphQuery.error : null,
     stackGraph,
     commitGraph,

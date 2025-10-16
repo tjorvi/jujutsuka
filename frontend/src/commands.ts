@@ -1,22 +1,6 @@
-import type { CommitId, FileChange } from "../../backend/src/repo-parser";
+import type { CommitId, FileChange, CommandTarget } from "../../backend/src/repo-parser";
 
 // Domain commands for git operations
-// Target types that are shared between commands
-export type CommandTarget = {
-  type: 'before' | 'after';
-  commitId: CommitId;
-} | {
-  type: 'new-branch';
-  fromCommitId: CommitId;
-} | {
-  type: 'new-commit-between';
-  beforeCommitId: CommitId;
-  afterCommitId: CommitId;
-} | {
-  type: 'existing-commit';
-  commitId: CommitId;
-};
-
 export interface RebaseCommand {
   type: 'rebase';
   commitId: CommitId;

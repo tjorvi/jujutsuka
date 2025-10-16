@@ -1,4 +1,5 @@
 import { $ } from 'execa';
+import { match } from 'ts-pattern';
 
 // Branded string types for type safety
 declare const CommitIdBrand: unique symbol;
@@ -114,7 +115,7 @@ export function parseJjLog(logOutput: string): Commit[] {
  * Helper function to execute the jj log command and parse its output
  */
 export async function getRepositoryCommits(): Promise<Commit[]> {
-  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'}`;
+  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'} ${'all()'}`;
   
   return parseJjLog(stdout);
 }
@@ -126,6 +127,22 @@ export interface FileChange {
   path: string;
   status: 'M' | 'A' | 'D' | 'R' | 'C'; // Modified, Added, Deleted, Renamed, Copied
 }
+
+// Target types for git operations
+export type CommandTarget = {
+  type: 'before' | 'after';
+  commitId: CommitId;
+} | {
+  type: 'new-branch';
+  fromCommitId: CommitId;
+} | {
+  type: 'new-commit-between';
+  beforeCommitId: CommitId;
+  afterCommitId: CommitId;
+} | {
+  type: 'existing-commit';
+  commitId: CommitId;
+};
 
 /**
  * Evolution log entry for a commit
@@ -393,4 +410,85 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
     rootStacks,
     leafStacks,
   };
+}
+
+/**
+ * Command execution functions
+ */
+
+export async function executeRebase(commitId: CommitId, target: CommandTarget): Promise<void> {
+  console.log(`🔄 Executing rebase: ${commitId} to ${JSON.stringify(target)}`);
+  
+  await match(target)
+    .with({ type: 'before' }, async (t) => {
+      // Move commit before target
+      await $`jj rebase -r ${commitId} -B ${t.commitId}`;
+    })
+    .with({ type: 'after' }, async (t) => {
+      // Move commit after target
+      await $`jj rebase -r ${commitId} -A ${t.commitId}`;
+    })
+    .with({ type: 'new-branch' }, async (t) => {
+      // Create new branch from specified commit
+      await $`jj rebase -r ${commitId} -d ${t.fromCommitId}`;
+    })
+    .with({ type: 'new-commit-between' }, async (t) => {
+      // Rebase doesn't directly support "between" - this might need special handling
+      console.log(`⚠️ Rebase to 'new-commit-between' not directly supported. beforeCommitId: ${t.beforeCommitId}, afterCommitId: ${t.afterCommitId}`);
+      throw new Error('Rebase to new-commit-between not supported');
+    })
+    .with({ type: 'existing-commit' }, async (t) => {
+      // Rebase onto existing commit (same as 'after')
+      await $`jj rebase -r ${commitId} -d ${t.commitId}`;
+    })
+    .exhaustive();
+}
+
+export async function executeSquash(sourceCommitId: CommitId, targetCommitId: CommitId): Promise<void> {
+  console.log(`🔧 Executing squash: ${sourceCommitId} into ${targetCommitId}`);
+  
+  // Squash source commit into target
+  await $`jj squash -r ${sourceCommitId} --into ${targetCommitId}`;
+}
+
+export async function executeSplit(
+  sourceCommitId: CommitId, 
+  files: FileChange[], 
+  target: CommandTarget
+): Promise<void> {
+  console.log(`✂️ Executing split: ${sourceCommitId} files: ${files.map(f => f.path).join(', ')} to ${JSON.stringify(target)}`);
+  
+  const filePaths = files.map(f => f.path);
+  
+  await match(target)
+    .with({ type: 'before' }, async (t) => {
+      // Split files into a new commit before target
+      await $`jj split -r ${sourceCommitId} -B ${t.commitId} -- ${filePaths}`;
+    })
+    .with({ type: 'after' }, async (t) => {
+      // Split files into a new commit after target
+      await $`jj split -r ${sourceCommitId} -A ${t.commitId} -- ${filePaths}`;
+    })
+    .with({ type: 'new-commit-between' }, async (t) => {
+      // Split files into a new commit between two commits
+      // -A means "after" (descendant of) and -B means "before" (ancestor of)
+      // To place the split between beforeCommitId and afterCommitId:
+      // We want: beforeCommitId → [new split commit] → afterCommitId
+      // So: -A beforeCommitId (new commit is after/descendant of beforeCommitId)
+      //     -B afterCommitId (new commit is before/ancestor of afterCommitId)
+      await $`jj split -r ${sourceCommitId} -A ${t.beforeCommitId} -B ${t.afterCommitId} -- ${filePaths}`;
+    })
+    .with({ type: 'existing-commit' }, async (t) => {
+      // Split files into an existing commit
+      await $`jj split -r ${sourceCommitId} --into ${t.commitId} -- ${filePaths}`;
+    })
+    .with({ type: 'new-branch' }, async (t) => {
+      // Create new branch and split files there
+      // This is a two-step process: split, then move to new branch
+      await $`jj split -r ${sourceCommitId} -- ${filePaths}`;
+      // TODO: The split creates a new commit, we need to move it to the target branch
+      // The exact semantics need clarification for new-branch target
+      console.log(`⚠️ new-branch split target needs proper implementation. fromCommitId: ${t.fromCommitId}`);
+    })
+    .exhaustive();
 }
