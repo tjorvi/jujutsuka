@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import type { CommitId, ChangeId, Commit } from "../../backend/src/repo-parser";
+import type { CommitId, Commit } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
@@ -341,70 +341,6 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
   );
 }
 
-interface CurvedArrowProps {
-  from: { x: number; y: number };
-  to: { x: number; y: number };
-  type: 'linear' | 'merge' | 'branch';
-}
-
-function CurvedArrow({ from, to, type }: CurvedArrowProps) {
-  const getArrowColor = (type: string) => {
-    switch (type) {
-      case 'merge': return '#ef4444'; // red
-      case 'branch': return '#f59e0b'; // amber
-      case 'linear': return '#3b82f6'; // blue
-      default: return '#6b7280'; // gray
-    }
-  };
-
-  const getArrowWidth = (type: string) => {
-    return type === 'linear' ? 2 : 3;
-  };
-
-  // Calculate control points for a smooth curve
-  const dy = to.y - from.y;
-  
-  // For clean vertical entry/exit, make control points extend vertically from endpoints
-  const verticalExtension = Math.max(Math.abs(dy) * 0.3, 40); // Minimum 40px vertical extension
-  
-  // Control points for vertical entry/exit
-  const cp1x = from.x; // Stay directly above/below the start point
-  const cp1y = from.y - verticalExtension; // Extend vertically upward from start
-  const cp2x = to.x; // Stay directly above/below the end point  
-  const cp2y = to.y + verticalExtension; // Extend vertically downward toward end
-
-  const pathData = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
-
-  // Calculate arrow head angle - should point in the direction of travel
-  const arrowSize = 8;
-  
-  // For UPWARD arrows (older to newer commits), arrows point UP
-  // Move the entire arrowhead up slightly for better positioning
-  const arrowOffset = 4; // Move up by 4 pixels
-  const arrowPoint1x = to.x - arrowSize * 0.5; // Left wing
-  const arrowPoint1y = to.y + arrowSize - arrowOffset; // Below the tip, moved up
-  const arrowPoint2x = to.x + arrowSize * 0.5; // Right wing  
-  const arrowPoint2y = to.y + arrowSize - arrowOffset; // Below the tip, moved up
-
-  return (
-    <g>
-      <path
-        d={pathData}
-        stroke={getArrowColor(type)}
-        strokeWidth={getArrowWidth(type)}
-        fill="none"
-        opacity={0.8}
-        strokeDasharray={type === 'branch' ? '5,5' : undefined}
-      />
-      <polygon
-        points={`${to.x},${to.y - arrowOffset} ${arrowPoint1x},${arrowPoint1y} ${arrowPoint2x},${arrowPoint2y}`}
-        fill={getArrowColor(type)}
-        opacity={0.8}
-      />
-    </g>
-  );
-}
-
 interface ConnectionComponentProps {
   connection: {
     from: StackId;
@@ -463,7 +399,6 @@ export function StackGraphComponent({
 
   const { stacks, connections, rootStacks, leafStacks, parallelGroups } = stackGraph;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [stackPositions, setStackPositions] = useState<Record<StackId, { x: number; y: number; top: number; bottom: number }>>({});
   
   const handleCommitSelect = (commitId: CommitId) => {
     onCommitSelect(commitId);
@@ -539,50 +474,7 @@ export function StackGraphComponent({
     console.log('🔧 Parallel groups:', parallelGroups);
     
     return levels;
-  }, [stacks, rootStacks, stackToGroup]);
-
-  // Track positions of stack elements for drawing arrows
-  useEffect(() => {
-    if (!containerRef.current) return;
-    
-    const updatePositions = () => {
-      const positions: Record<StackId, { x: number; y: number; top: number; bottom: number }> = {};
-      const stackElements = containerRef.current?.querySelectorAll('[data-stack-id]');
-      const scrollContainer = containerRef.current?.querySelector('[data-scroll-container]') as HTMLElement;
-      
-      stackElements?.forEach((element) => {
-        const stackId = element.getAttribute('data-stack-id') as StackId;
-        if (stackId && scrollContainer) {
-          const rect = element.getBoundingClientRect();
-          const scrollRect = scrollContainer.getBoundingClientRect();
-          
-          // Calculate position within the scroll container, accounting for scroll offset
-          positions[stackId] = {
-            x: rect.left - scrollRect.left + rect.width / 2,
-            y: rect.top - scrollRect.top + scrollContainer.scrollTop + rect.height / 2,
-            top: rect.top - scrollRect.top + scrollContainer.scrollTop,
-            bottom: rect.top - scrollRect.top + scrollContainer.scrollTop + rect.height
-          };
-        }
-      });
-      
-      setStackPositions(positions);
-    };
-
-    // Update positions after render
-    const timeoutId = setTimeout(updatePositions, 100);
-    
-    // Update on resize and scroll
-    const scrollContainer = containerRef.current?.querySelector('[data-scroll-container]');
-    window.addEventListener('resize', updatePositions);
-    scrollContainer?.addEventListener('scroll', updatePositions);
-    
-    return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', updatePositions);
-      scrollContainer?.removeEventListener('scroll', updatePositions);
-    };
-  }, [layoutLevels]);
+  }, [stacks, rootStacks, stackToGroup, parallelGroups]);
 
   if (Object.keys(stacks).length === 0) {
     return (
@@ -623,71 +515,29 @@ export function StackGraphComponent({
         style={{ 
           display: 'flex',
           flexDirection: 'column',
-          gap: '20px',
+          gap: '0px', // Remove gap, we'll add connectors
           overflowY: 'auto',
           maxHeight: '80vh',
           position: 'relative'
         }}
       >
-        {/* SVG overlay for curved arrows - now inside the scrollable container */}
-        <svg
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
-        >
-          {connections.map((connection, index) => {
-            const fromStack = stackPositions[connection.from];
-            const toStack = stackPositions[connection.to];
-            
-            console.log('🔧 Rendering connection', index, ':', connection.from, '->', connection.to, 'positions:', {
-              from: fromStack,
-              to: toStack
-            });
-            
-            if (!fromStack || !toStack) {
-              console.log('⚠️ Missing position data for connection', connection.from, '->', connection.to);
-              return null;
-            }
-            
-            // Connection semantics: "from" is older stack, "to" is newer stack
-            // Arrows should flow upward from older (lower in UI) to newer (higher in UI)
-            // Use actual stack bounds instead of fixed offsets
-            const fromPoint = { x: fromStack.x, y: fromStack.top }; // top edge of older stack
-            const toPoint = { x: toStack.x, y: toStack.bottom }; // bottom edge of newer stack
-            
-            console.log('🔧 Drawing arrow from', fromPoint, 'to', toPoint, 'type:', connection.type);
-            
-            return (
-              <CurvedArrow
-                key={index}
-                from={fromPoint}
-                to={toPoint}
-                type={connection.type}
-              />
-            );
-          })}
-        </svg>
         {layoutLevels.slice().reverse().map((level, levelIndex) => {
           const actualLevelIndex = layoutLevels.length - 1 - levelIndex;
+          const isLastLevel = levelIndex === layoutLevels.length - 1;
+          
           return (
-          <div key={actualLevelIndex} style={{ position: 'relative', zIndex: 2 }}>
+          <div key={actualLevelIndex}>
             {/* Stacks in this level - horizontal layout, centered */}
             <div style={{
               display: 'flex',
-              gap: level.length > 1 ? '40px' : '16px', // Moderate gap for parallel stacks
-              flexWrap: 'nowrap', // Prevent wrapping
+              gap: level.length > 1 ? '40px' : '16px',
+              flexWrap: 'nowrap',
               alignItems: 'flex-start',
               justifyContent: level.length > 1 ? 'center' : 'center',
               position: 'relative',
-              marginBottom: '20px',
-              overflowX: 'auto', // Allow horizontal scrolling if needed
+              overflowX: 'auto',
               minWidth: '100%',
+              padding: '20px 0',
             }}>
               {level.map((item) => {
                 const stack = stacks[item.stackId];
@@ -698,8 +548,8 @@ export function StackGraphComponent({
                     data-stack-id={item.stackId}
                     style={{ 
                       position: 'relative', 
-                      minWidth: '220px', // More compact
-                      flexShrink: 0 // Prevent shrinking when in flex container
+                      minWidth: '220px',
+                      flexShrink: 0
                     }}
                   >
                     <StackComponent 
@@ -713,6 +563,23 @@ export function StackGraphComponent({
                 );
               })}
             </div>
+            
+            {/* Simple arrow connector to next level */}
+            {!isLastLevel && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '8px 0',
+              }}>
+                <div style={{
+                  fontSize: '24px',
+                  color: '#3b82f6',
+                }}>
+                  ↓
+                </div>
+              </div>
+            )}
           </div>
         );})}
       </div>
