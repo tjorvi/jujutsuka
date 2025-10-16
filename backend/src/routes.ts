@@ -8,7 +8,8 @@ import {
   createCommitId,
   executeRebase,
   executeSquash,
-  executeSplit
+  executeSplit,
+  executeMoveFiles
 } from './repo-parser.ts';
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
 import { z } from 'zod';
@@ -93,6 +94,15 @@ export const appRouter = router({
             }),
             z.object({ type: z.literal('existing-commit'), commitId: z.string() })
           ])
+        }),
+        z.object({
+          type: z.literal('move-files'),
+          sourceCommitId: z.string(),
+          targetCommitId: z.string(),
+          files: z.array(z.object({
+            path: z.string(),
+            status: z.string()
+          }))
         })
       ])
     }))
@@ -157,6 +167,11 @@ export const appRouter = router({
           }
           
           await executeSplit(sourceCommitId, command.files, target);
+          
+        } else if (command.type === 'move-files') {
+          const sourceCommitId = createCommitId(command.sourceCommitId);
+          const targetCommitId = createCommitId(command.targetCommitId);
+          await executeMoveFiles(sourceCommitId, targetCommitId, command.files);
           
         } else {
           throw new Error(`Unknown command type: ${(command as any).type}`);

@@ -17,6 +17,7 @@ interface GraphState {
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
   executeSquash: (sourceCommitId: CommitId, targetCommitId: CommitId) => Promise<void>;
   executeSplit: (sourceCommitId: CommitId, files: FileChange[], target: CommandTarget) => Promise<void>;
+  executeMoveFiles: (sourceCommitId: CommitId, targetCommitId: CommitId, files: FileChange[]) => Promise<void>;
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -87,6 +88,23 @@ export const useGraphStore = create<GraphState>()(
           await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Split command execution failed:', error);
+        } finally {
+          set({ isExecutingCommand: false });
+        }
+      },
+
+      executeMoveFiles: async (sourceCommitId, targetCommitId, files) => {
+        const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files };
+        console.log('📁 MOVE FILES COMMAND:', command);
+
+        set({ isExecutingCommand: true });
+
+        try {
+          await mutations.executeCommand.mutate({ command });
+          console.log('✅ Move files command executed successfully');
+          await get().refreshGraphData();
+        } catch (error) {
+          console.error('❌ Move files command execution failed:', error);
         } finally {
           set({ isExecutingCommand: false });
         }

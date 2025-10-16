@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { 
   buildStackGraph, 
   createCommitId, 
+  createChangeId,
   createEmail, 
   createDescription, 
   type Commit 
@@ -17,6 +18,7 @@ describe('Stack Preprocessing', () => {
   ): Commit {
     return {
       id: createCommitId(id.padEnd(40, '0')),
+      changeId: createChangeId(id.padEnd(12, '0')), // Use shorter change ID based on commit ID
       description: createDescription(description),
       author: {
         name: 'Test Author',

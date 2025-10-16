@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import type { CommitId, Commit } from "../../backend/src/repo-parser";
+import type { CommitId, ChangeId, Commit } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
@@ -148,6 +148,23 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
   const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit, handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
 
+  // Debug: log first commit data to see what we're getting
+  useEffect(() => {
+    if (stack.commits.length > 0) {
+      const firstCommitId = stack.commits[0];
+      const commitData = commitGraph[firstCommitId];
+      if (commitData) {
+        console.log('🐛 DEBUG commit data:', {
+          id: firstCommitId,
+          changeId: commitData.commit.changeId,
+          description: commitData.commit.description,
+          author: commitData.commit.author.name,
+          timestamp: commitData.commit.timestamp
+        });
+      }
+    }
+  }, [stack.commits, commitGraph]);
+
   return (
     <div style={{
       border: isInParallelGroup ? '2px solid #a855f7' : '2px solid #3b82f6',
@@ -294,13 +311,21 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   opacity: isBeingDragged ? 0.7 : 1,
                 }}
               >
-                <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
-                  {commitId.slice(0, 8)}
+                <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <div>c: {commit.changeId.slice(0, 8)}</div>
+                  <div>r: {commitId.slice(0, 8)}</div>
                 </div>
-                <div style={{ fontSize: '13px', margin: '2px 0', color: '#374151' }}>
+                <div style={{ 
+                  fontSize: '14px', 
+                  fontWeight: '500',
+                  margin: '4px 0', 
+                  color: '#111827',
+                  wordWrap: 'break-word',
+                  lineHeight: '1.2'
+                }}>
                   {commit.description}
                 </div>
-                <div style={{ fontSize: '10px', color: '#9ca3af' }}>
+                <div style={{ fontSize: '11px', color: '#6b7280' }}>
                   {commit.author.name} • {commit.timestamp.toLocaleDateString()}
                 </div>
               </div>

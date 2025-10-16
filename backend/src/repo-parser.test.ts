@@ -3,7 +3,8 @@ import {
   parseJjLog, 
   buildCommitGraph, 
   type Commit, 
-  createCommitId, 
+  createCommitId,
+  createChangeId, 
   createEmail, 
   createDescription,
   parseTimestamp 
@@ -213,6 +214,7 @@ describe('buildCommitGraph', () => {
   const sampleCommits: Commit[] = [
     {
       id: createCommitId('1111111111111111111111111111111111111111'),
+      changeId: createChangeId('change1'),
       description: createDescription('First commit'),
       author: { name: 'Author', email: createEmail('author@example.com') },
       timestamp: new Date('2025-10-13 21:00:00.000 +00:00'),
@@ -220,6 +222,7 @@ describe('buildCommitGraph', () => {
     },
     {
       id: createCommitId('2222222222222222222222222222222222222222'),
+      changeId: createChangeId('change2'),
       description: createDescription('Second commit'),
       author: { name: 'Author', email: createEmail('author@example.com') },
       timestamp: new Date('2025-10-13 21:01:00.000 +00:00'),
@@ -227,6 +230,7 @@ describe('buildCommitGraph', () => {
     },
     {
       id: createCommitId('3333333333333333333333333333333333333333'),
+      changeId: createChangeId('change3'),
       description: createDescription('Third commit'),
       author: { name: 'Author', email: createEmail('author@example.com') },
       timestamp: new Date('2025-10-13 21:02:00.000 +00:00'),
@@ -257,6 +261,7 @@ describe('buildCommitGraph', () => {
     const mergeCommits: Commit[] = [
       {
         id: createCommitId('1111111111111111111111111111111111111111'),
+        changeId: createChangeId('change1'),
         description: createDescription('First commit'),
         author: { name: 'Author', email: createEmail('author@example.com') },
         timestamp: new Date('2025-10-13 21:00:00.000 +00:00'),
@@ -264,6 +269,7 @@ describe('buildCommitGraph', () => {
       },
       {
         id: createCommitId('2222222222222222222222222222222222222222'),
+        changeId: createChangeId('change2'),
         description: createDescription('Second commit'),
         author: { name: 'Author', email: createEmail('author@example.com') },
         timestamp: new Date('2025-10-13 21:01:00.000 +00:00'),
@@ -271,6 +277,7 @@ describe('buildCommitGraph', () => {
       },
       {
         id: createCommitId('3333333333333333333333333333333333333333'),
+        changeId: createChangeId('change3'),
         description: createDescription('Merge commit'),
         author: { name: 'Author', email: createEmail('author@example.com') },
         timestamp: new Date('2025-10-13 21:02:00.000 +00:00'),
@@ -303,6 +310,7 @@ describe('buildCommitGraph', () => {
     const commitsWithMissingParent: Commit[] = [
       {
         id: createCommitId('1111111111111111111111111111111111111111'),
+        changeId: createChangeId('change1'),
         description: createDescription('Commit with missing parent'),
         author: { name: 'Author', email: createEmail('author@example.com') },
         timestamp: new Date('2025-10-13 21:00:00.000 +00:00'),

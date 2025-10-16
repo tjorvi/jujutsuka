@@ -8,17 +8,14 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
   const [draggedFromCommit, setDraggedFromCommit] = useState<CommitId | null>(null);
   const [draggedCommit, setDraggedCommit] = useState<CommitId | null>(null);
   
-  const { executeRebase, executeSquash, executeSplit } = useGraphStore();
+  const { executeRebase, executeSquash, executeSplit, executeMoveFiles } = useGraphStore();
 
   const handleFileDrop = (targetCommitId: CommitId, insertType: 'before' | 'after' | 'branch' | 'existing' = 'before', beforeCommitId?: CommitId, afterCommitId?: CommitId) => {
     if (!draggedFile || !draggedFromCommit) return;
     
     if (insertType === 'existing') {
-      // Split to existing commit (move files)
-      executeSplit(draggedFromCommit, [draggedFile], {
-        type: 'existing-commit',
-        commitId: targetCommitId
-      });
+      // Move files to existing commit using squash
+      executeMoveFiles(draggedFromCommit, targetCommitId, [draggedFile]);
     } else if (insertType === 'branch') {
       // Split to new branch
       executeSplit(draggedFromCommit, [draggedFile], {
