@@ -341,6 +341,60 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
   );
 }
 
+interface SplitArrowProps {
+  count: number; // Number of stacks being split into
+  stackWidth: number;
+  gap: number;
+}
+
+function SplitArrow({ count, stackWidth, gap }: SplitArrowProps) {
+  const totalWidth = count * stackWidth + (count - 1) * gap;
+  const height = 40;
+  
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '8px 0',
+      width: '100%',
+    }}>
+      <svg width={totalWidth} height={height} style={{ overflow: 'visible' }}>
+        {/* Split arrows go here - you'll implement the actual lines */}
+        <text x={totalWidth / 2} y={height / 2} textAnchor="middle" fill="#f59e0b" fontSize="14">
+          Split ({count})
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+interface MergeArrowProps {
+  count: number; // Number of stacks being merged from
+  stackWidth: number;
+  gap: number;
+}
+
+function MergeArrow({ count, stackWidth, gap }: MergeArrowProps) {
+  const totalWidth = count * stackWidth + (count - 1) * gap;
+  const height = 40;
+  
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '8px 0',
+      width: '100%',
+    }}>
+      <svg width={totalWidth} height={height} style={{ overflow: 'visible' }}>
+        {/* Merge arrows go here - you'll implement the actual lines */}
+        <text x={totalWidth / 2} y={height / 2} textAnchor="middle" fill="#10b981" fontSize="14">
+          Merge ({count})
+        </text>
+      </svg>
+    </div>
+  );
+}
+
 interface ConnectionComponentProps {
   connection: {
     from: StackId;
@@ -564,22 +618,42 @@ export function StackGraphComponent({
               })}
             </div>
             
-            {/* Simple arrow connector to next level */}
-            {!isLastLevel && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                padding: '8px 0',
-              }}>
+            {/* Arrow connector to next level - shows relationship */}
+            {!isLastLevel && (() => {
+              const nextLevel = layoutLevels[layoutLevels.length - levelIndex - 2];
+              const currentCount = level.length;
+              const nextCount = nextLevel.length;
+              const isSplit = currentCount > 1 && nextCount === 1;
+              const isMerge = currentCount === 1 && nextCount > 1;
+              
+              const stackWidth = 220;
+              const gap = 40;
+              
+              if (isMerge) {
+                return <MergeArrow count={nextCount} stackWidth={stackWidth} gap={gap} />;
+              }
+              
+              if (isSplit) {
+                return <SplitArrow count={currentCount} stackWidth={stackWidth} gap={gap} />;
+              }
+              
+              // Linear - simple arrow
+              return (
                 <div style={{
-                  fontSize: '24px',
-                  color: '#3b82f6',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '8px 0',
                 }}>
-                  ↓
+                  <div style={{
+                    fontSize: '24px',
+                    color: '#3b82f6',
+                  }}>
+                    ↑
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         );})}
       </div>
