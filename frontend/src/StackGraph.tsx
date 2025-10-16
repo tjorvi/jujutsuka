@@ -311,9 +311,13 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   opacity: isBeingDragged ? 0.7 : 1,
                 }}
               >
-                <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <div>c: {commit.changeId.slice(0, 8)}</div>
-                  <div>r: {commitId.slice(0, 8)}</div>
+                <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <div style={{ fontWeight: '600', color: '#374151' }}>
+                    change: {commit.changeId.slice(0, 8)}
+                  </div>
+                  <div style={{ fontSize: '9px', color: '#9ca3af' }}>
+                    commit: {commitId.slice(0, 8)}
+                  </div>
                 </div>
                 <div style={{ 
                   fontSize: '14px', 
