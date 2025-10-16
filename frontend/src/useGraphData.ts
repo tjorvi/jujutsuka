@@ -28,16 +28,27 @@ export function useGraphData() {
     }
   }, [graphQuery, setCommitGraph]);  // Compute stack graph from commit graph (memoized)
   const stackGraph = useMemo(() => {
+    console.log('🔧 useGraphData: useMemo triggered, commitGraph:', !!commitGraph);
     if (!commitGraph) return null;
     
     // Extract commits from the commit graph
     const commits = Object.values(commitGraph).map(node => node.commit);
+    console.log('🔧 useGraphData: Building stack graph from', commits.length, 'commits');
     
     // Build stack graph using the same logic as backend
     const rawStackGraph = buildStackGraph(commits);
+    console.log('🔧 useGraphData: Raw stack graph:', {
+      stacks: Object.keys(rawStackGraph.stacks).length,
+      connections: rawStackGraph.connections.length,
+      rootStacks: rawStackGraph.rootStacks.length,
+      leafStacks: rawStackGraph.leafStacks.length
+    });
+    console.log('🔧 useGraphData: Connections:', rawStackGraph.connections);
     
     // Enhance with layout information
     const layoutStackGraph = enhanceStackGraphForLayout(rawStackGraph);
+    console.log('🔧 useGraphData: Enhanced with parallel groups:', layoutStackGraph.parallelGroups.length);
+    console.log('🔧 useGraphData: Parallel groups:', layoutStackGraph.parallelGroups);
     
     return layoutStackGraph;
   }, [commitGraph]);

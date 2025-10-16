@@ -154,10 +154,14 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
   const connections: StackConnection[] = [];
   const stackConnections = new Set<string>(); // To avoid duplicates
 
+  console.log('🔧 Building connections between', Object.keys(stacks).length, 'stacks');
+
   for (const stack of Object.values(stacks)) {
     // Get the top (newest) commit of this stack
     const topCommit = stack.commits[stack.commits.length - 1];
     const { children } = graph[topCommit];
+
+    console.log('🔧 Stack', stack.id, 'top commit:', topCommit.slice(0, 8), 'has', children.length, 'children');
 
     for (const childCommitId of children) {
       const childStackId = commitToStack.get(childCommitId);
@@ -175,6 +179,7 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
             childCommit.parents.length > 1 ? 'merge' :
             children.length > 1 ? 'branch' : 'linear';
 
+          console.log('🔧 Adding connection:', connectionKey, 'type:', connectionType);
           connections.push({
             from: stack.id,
             to: childStackId,

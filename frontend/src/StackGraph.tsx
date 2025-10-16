@@ -527,6 +527,17 @@ export function StackGraphComponent({
       }
     }
     
+    console.log('🔧 Layout levels:', levels.map((level, i) => ({
+      level: i,
+      stacks: level.map(item => ({
+        stackId: item.stackId,
+        isParallel: item.isParallel,
+        parallelGroupId: item.parallelGroupId
+      }))
+    })));
+    
+    console.log('🔧 Parallel groups:', parallelGroups);
+    
     return levels;
   }, [stacks, rootStacks, stackToGroup]);
 
@@ -634,13 +645,23 @@ export function StackGraphComponent({
             const fromStack = stackPositions[connection.from];
             const toStack = stackPositions[connection.to];
             
-            if (!fromStack || !toStack) return null;
+            console.log('🔧 Rendering connection', index, ':', connection.from, '->', connection.to, 'positions:', {
+              from: fromStack,
+              to: toStack
+            });
+            
+            if (!fromStack || !toStack) {
+              console.log('⚠️ Missing position data for connection', connection.from, '->', connection.to);
+              return null;
+            }
             
             // Connection semantics: "from" is older stack, "to" is newer stack
             // Arrows should flow upward from older (lower in UI) to newer (higher in UI)
             // Use actual stack bounds instead of fixed offsets
             const fromPoint = { x: fromStack.x, y: fromStack.top }; // top edge of older stack
             const toPoint = { x: toStack.x, y: toStack.bottom }; // bottom edge of newer stack
+            
+            console.log('🔧 Drawing arrow from', fromPoint, 'to', toPoint, 'type:', connection.type);
             
             return (
               <CurvedArrow
@@ -659,12 +680,14 @@ export function StackGraphComponent({
             {/* Stacks in this level - horizontal layout, centered */}
             <div style={{
               display: 'flex',
-              gap: '16px',
-              flexWrap: 'wrap',
+              gap: level.length > 1 ? '40px' : '16px', // Moderate gap for parallel stacks
+              flexWrap: 'nowrap', // Prevent wrapping
               alignItems: 'flex-start',
-              justifyContent: 'center',
+              justifyContent: level.length > 1 ? 'center' : 'center',
               position: 'relative',
               marginBottom: '20px',
+              overflowX: 'auto', // Allow horizontal scrolling if needed
+              minWidth: '100%',
             }}>
               {level.map((item) => {
                 const stack = stacks[item.stackId];
@@ -673,7 +696,11 @@ export function StackGraphComponent({
                   <div 
                     key={item.stackId} 
                     data-stack-id={item.stackId}
-                    style={{ position: 'relative', minWidth: '280px' }}
+                    style={{ 
+                      position: 'relative', 
+                      minWidth: '220px', // More compact
+                      flexShrink: 0 // Prevent shrinking when in flex container
+                    }}
                   >
                     <StackComponent 
                       stack={stack} 
