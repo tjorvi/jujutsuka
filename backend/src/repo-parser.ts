@@ -1,50 +1,9 @@
 import { $ } from 'execa';
 import { match } from 'ts-pattern';
 
-// Helper function to execute and log jj commands
+// Helper function to execute jj commands
 async function executeJjCommand(command: string, args: string[]): Promise<void> {
-  const fullCommand = `jj ${command} ${args.join(' ')}`;
-  console.log(`🔧 Executing: ${fullCommand}`);
-  
-  try {
-    const result = await $`jj ${[command, ...args]}`;
-    console.log(`✅ Command succeeded: ${fullCommand}`);
-    console.log(`📤 Exit code: ${result.exitCode}`);
-    
-    if (result.stdout && result.stdout.trim()) {
-      console.log(`📜 stdout:`);
-      console.log(result.stdout);
-    }
-    
-    if (result.stderr && result.stderr.trim()) {
-      console.log(`⚠️ stderr:`);
-      console.log(result.stderr);
-    }
-    
-    if (!result.stdout?.trim() && !result.stderr?.trim()) {
-      console.log(`📝 No output produced`);
-    }
-    
-  } catch (error: any) {
-    console.error(`❌ Command failed: ${fullCommand}`);
-    console.error(`📤 Exit code: ${error.exitCode || 'unknown'}`);
-    
-    if (error.stdout && error.stdout.trim()) {
-      console.error(`📜 stdout:`);
-      console.error(error.stdout);
-    }
-    
-    if (error.stderr && error.stderr.trim()) {
-      console.error(`⚠️ stderr:`);
-      console.error(error.stderr);
-    }
-    
-    if (error.message) {
-      console.error(`💬 Error message: ${error.message}`);
-    }
-    
-    throw error; // Re-throw to maintain error propagation
-  }
+  await $`jj ${[command, ...args]}`;
 }
 
 // Branded string types for type safety
@@ -244,7 +203,6 @@ export async function getCommitFileChanges(commitId: CommitId): Promise<FileChan
     
     return changes;
   } catch (error) {
-    console.warn(`Failed to get file changes for commit ${commitId}:`, error);
     return [];
   }
 }
@@ -277,14 +235,13 @@ export async function getCommitEvolog(commitId: CommitId): Promise<EvoLogEntry[]
             operationDescription: operationDescription.trim(),
           });
         } catch (error) {
-          console.warn(`Failed to parse evolog entry: ${line}`, error);
+          // Skip invalid entries
         }
       }
     }
     
     return entries;
   } catch (error) {
-    console.warn(`Failed to get evolog for commit ${commitId}:`, error);
     return [];
   }
 }
@@ -382,12 +339,13 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
       visited.add(currentId);
       commitToStack.set(currentId, stackId);
 
-      // Stop if this commit has multiple children (branch point) or multiple parents (merge point)
-      if (node.children.length !== 1 || node.commit.parents.length > 1) {
+      // Stop if this commit has multiple children (branch point)
+      if (node.children.length !== 1) {
         break;
       }
 
-      // Continue to the next commit if it has exactly one parent (us)
+      // Continue to the next commit if it has exactly one parent
+      // (even if the current commit is a merge, we continue forward if child has 1 parent)
       const nextId = node.children[0];
       const nextNode = graph[nextId];
       if (!nextNode || nextNode.commit.parents.length !== 1) {
@@ -467,6 +425,23 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
     .filter(stack => stack.childStacks.length === 0)
     .map(stack => stack.id);
 
+  // Log stack graph structure
+  console.log('\n📊 Stack Graph:');
+  for (const [stackId, stack] of Object.entries(stacks)) {
+    const commitDescs = stack.commits.map(cid => {
+      const commit = graph[cid]?.commit;
+      return commit ? commit.description.substring(0, 40) : cid.substring(0, 8);
+    }).join(', ');
+    console.log(`  ${stackId}: [${stack.commits.length} commits] ${commitDescs}`);
+    if (stack.parentStacks.length > 0) {
+      console.log(`    ↑ from: ${stack.parentStacks.join(', ')}`);
+    }
+    if (stack.childStacks.length > 0) {
+      console.log(`    ↓ to: ${stack.childStacks.join(', ')}`);
+    }
+  }
+  console.log('');
+
   return {
     stacks,
     connections,
@@ -480,8 +455,6 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
  */
 
 export async function executeRebase(commitId: CommitId, target: CommandTarget): Promise<void> {
-  console.log(`🔄 Executing rebase: ${commitId} to ${JSON.stringify(target)}`);
-  
   await match(target)
     .with({ type: 'before' }, async (t) => {
       // Move commit before target
@@ -497,7 +470,6 @@ export async function executeRebase(commitId: CommitId, target: CommandTarget): 
     })
     .with({ type: 'new-commit-between' }, async (t) => {
       // Rebase doesn't directly support "between" - this might need special handling
-      console.log(`⚠️ Rebase to 'new-commit-between' not directly supported. beforeCommitId: ${t.beforeCommitId}, afterCommitId: ${t.afterCommitId}`);
       throw new Error('Rebase to new-commit-between not supported');
     })
     .with({ type: 'existing-commit' }, async (t) => {
@@ -508,8 +480,6 @@ export async function executeRebase(commitId: CommitId, target: CommandTarget): 
 }
 
 export async function executeSquash(sourceCommitId: CommitId, targetCommitId: CommitId): Promise<void> {
-  console.log(`🔧 Executing squash: ${sourceCommitId} into ${targetCommitId}`);
-  
   // Squash source commit into target using --from and --into
   await executeJjCommand('squash', ['--from', sourceCommitId, '--into', targetCommitId]);
 }

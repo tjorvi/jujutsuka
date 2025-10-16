@@ -16,8 +16,16 @@ File dragging: if I start dragging a file I want all _other_ changes to highligh
 # Architectural
 
 - Use command-events and a reducer or a store like zustand.
+- The command layer is _intention_ based, framed in the context of our UIs. Like "move file".
 
-- The events should be 2 layered.
-  - First layer is _intention_ based, framed in the context of our UIs. Like "move file".
-  - This layer then gets translated in to JJ layer which is based on jj-like command events like Split, Squash, etc.
-  - Each intention command can translate to one or more JJ commands.
+# Unspecced functionality currently in code
+
+- Parallel stacks (diamond patterns where multiple branches share same parent/child) get visually grouped with purple borders --- Decision: rejected. The purple borders are something someone added but are irrelevant. Please remove them.
+- Drop targets support 5 target types --- Decision: More clarity needed. Current behavior:
+  - `after`: Places new commit as child of target (uses `jj --insert-after`)
+  - `before`: Places new commit as parent of target (uses `jj --insert-before`)
+  - `existing-commit`: Moves files into existing commit (uses `jj --into`)
+  - `new-branch`: Creates branching point from target (uses `jj --destination`)
+  - `new-commit-between`: Places between two specific commits (uses both `--insert-after` and `--insert-before`)
+- Evolog panel shows operation metadata (operation ID and description) beyond just the commit history
+- Arrow placeholders between stack levels show split/merge indicators

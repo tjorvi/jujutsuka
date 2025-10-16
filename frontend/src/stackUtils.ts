@@ -113,12 +113,13 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
       visited.add(currentId);
       commitToStack.set(currentId, stackId);
 
-      // Stop if this commit has multiple children (branch point) or multiple parents (merge point)
-      if (node.children.length !== 1 || node.commit.parents.length > 1) {
+      // Stop if this commit has multiple children (branch point)
+      if (node.children.length !== 1) {
         break;
       }
 
-      // Continue to the next commit if it has exactly one parent (us)
+      // Continue to the next commit if it has exactly one parent
+      // (even if the current commit is a merge, we continue forward if child has 1 parent)
       const nextId = node.children[0];
       const nextNode = graph[nextId];
       if (!nextNode || nextNode.commit.parents.length !== 1) {
