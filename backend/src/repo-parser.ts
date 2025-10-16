@@ -1,12 +1,60 @@
 import { $ } from 'execa';
 import { match } from 'ts-pattern';
 
+// Helper function to execute and log jj commands
+async function executeJjCommand(command: string, args: string[]): Promise<void> {
+  const fullCommand = `jj ${command} ${args.join(' ')}`;
+  console.log(`🔧 Executing: ${fullCommand}`);
+  
+  try {
+    const result = await $`jj ${[command, ...args]}`;
+    console.log(`✅ Command succeeded: ${fullCommand}`);
+    console.log(`📤 Exit code: ${result.exitCode}`);
+    
+    if (result.stdout && result.stdout.trim()) {
+      console.log(`📜 stdout:`);
+      console.log(result.stdout);
+    }
+    
+    if (result.stderr && result.stderr.trim()) {
+      console.log(`⚠️ stderr:`);
+      console.log(result.stderr);
+    }
+    
+    if (!result.stdout?.trim() && !result.stderr?.trim()) {
+      console.log(`📝 No output produced`);
+    }
+    
+  } catch (error: any) {
+    console.error(`❌ Command failed: ${fullCommand}`);
+    console.error(`📤 Exit code: ${error.exitCode || 'unknown'}`);
+    
+    if (error.stdout && error.stdout.trim()) {
+      console.error(`📜 stdout:`);
+      console.error(error.stdout);
+    }
+    
+    if (error.stderr && error.stderr.trim()) {
+      console.error(`⚠️ stderr:`);
+      console.error(error.stderr);
+    }
+    
+    if (error.message) {
+      console.error(`💬 Error message: ${error.message}`);
+    }
+    
+    throw error; // Re-throw to maintain error propagation
+  }
+}
+
 // Branded string types for type safety
 declare const CommitIdBrand: unique symbol;
+declare const ChangeIdBrand: unique symbol;
 declare const EmailBrand: unique symbol;
 declare const DescriptionBrand: unique symbol;
 
 export type CommitId = string & { readonly [CommitIdBrand]: true };
+export type ChangeId = string & { readonly [ChangeIdBrand]: true };
 export type Email = string & { readonly [EmailBrand]: true };
 export type Description = string & { readonly [DescriptionBrand]: true };
 
@@ -20,6 +68,18 @@ export function createCommitId(value: string): CommitId {
     throw new Error(`Invalid commit ID: ${value} (length: ${trimmed.length}, expected 40)`);
   }
   return trimmed as CommitId;
+}
+
+export function createChangeId(value: string): ChangeId {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`Empty change ID`);
+  }
+  // Change IDs are typically shorter than commit IDs in jj (usually 12 chars by default)
+  if (trimmed.length < 8) {
+    throw new Error(`Invalid change ID: ${value} (length: ${trimmed.length}, expected at least 8)`);
+  }
+  return trimmed as ChangeId;
 }
 
 export function createEmail(value: string): Email {
@@ -55,6 +115,7 @@ export function parseTimestamp(timestampStr: string): Date {
 
 export interface Commit {
   id: CommitId;
+  changeId: ChangeId;
   description: Description;
   author: {
     name: string;
@@ -66,7 +127,7 @@ export interface Commit {
 
 /**
  * Parses the output from `jj log` command with the parseable format
- * Expected format: commit_id|description|author_name|author_email|timestamp|parent_commit_ids
+ * Expected format: commit_id|change_id|description|author_name|author_email|timestamp|parent_commit_ids
  */
 export function parseJjLog(logOutput: string): Commit[] {
   const lines = logOutput.trim().split('\n');
@@ -79,11 +140,11 @@ export function parseJjLog(logOutput: string): Commit[] {
     }
     
     const parts = line.split('|');
-    if (parts.length < 6) {
-      throw new Error(`Line ${i} has ${parts.length} parts, expected at least 6. Line: "${line}"`);
+    if (parts.length < 7) {
+      throw new Error(`Line ${i} has ${parts.length} parts, expected at least 7. Line: "${line}"`);
     }
 
-    const [id, description, authorName, authorEmail, timestamp, parentsStr] = parts;
+    const [id, changeId, description, authorName, authorEmail, timestamp, parentsStr] = parts;
     
     // Skip the root commit (all zeros)
     if (id.trim() === '0000000000000000000000000000000000000000') continue;
@@ -95,6 +156,7 @@ export function parseJjLog(logOutput: string): Commit[] {
 
     commits.push({
       id: createCommitId(id),
+      changeId: createChangeId(changeId),
       description: createDescription(description),
       author: {
         name: authorName.trim(),
@@ -115,7 +177,8 @@ export function parseJjLog(logOutput: string): Commit[] {
  * Helper function to execute the jj log command and parse its output
  */
 export async function getRepositoryCommits(): Promise<Commit[]> {
-  const { stdout } = await $`jj log --no-graph --template ${'commit_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"'} ${'all()'}`;
+  const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"';
+  const { stdout } = await $`jj log --no-graph --template ${template} all()`;
   
   return parseJjLog(stdout);
 }
@@ -422,15 +485,15 @@ export async function executeRebase(commitId: CommitId, target: CommandTarget): 
   await match(target)
     .with({ type: 'before' }, async (t) => {
       // Move commit before target
-      await $`jj rebase -r ${commitId} -B ${t.commitId}`;
+      await executeJjCommand('rebase', ['-r', commitId, '--insert-before', t.commitId]);
     })
     .with({ type: 'after' }, async (t) => {
       // Move commit after target
-      await $`jj rebase -r ${commitId} -A ${t.commitId}`;
+      await executeJjCommand('rebase', ['-r', commitId, '--insert-after', t.commitId]);
     })
     .with({ type: 'new-branch' }, async (t) => {
       // Create new branch from specified commit
-      await $`jj rebase -r ${commitId} -d ${t.fromCommitId}`;
+      await executeJjCommand('rebase', ['-r', commitId, '--destination', t.fromCommitId]);
     })
     .with({ type: 'new-commit-between' }, async (t) => {
       // Rebase doesn't directly support "between" - this might need special handling
@@ -439,7 +502,7 @@ export async function executeRebase(commitId: CommitId, target: CommandTarget): 
     })
     .with({ type: 'existing-commit' }, async (t) => {
       // Rebase onto existing commit (same as 'after')
-      await $`jj rebase -r ${commitId} -d ${t.commitId}`;
+      await executeJjCommand('rebase', ['-r', commitId, '--destination', t.commitId]);
     })
     .exhaustive();
 }
@@ -447,8 +510,21 @@ export async function executeRebase(commitId: CommitId, target: CommandTarget): 
 export async function executeSquash(sourceCommitId: CommitId, targetCommitId: CommitId): Promise<void> {
   console.log(`🔧 Executing squash: ${sourceCommitId} into ${targetCommitId}`);
   
-  // Squash source commit into target
-  await $`jj squash -r ${sourceCommitId} --into ${targetCommitId}`;
+  // Squash source commit into target using --from and --into
+  await executeJjCommand('squash', ['--from', sourceCommitId, '--into', targetCommitId]);
+}
+
+export async function executeMoveFiles(
+  sourceCommitId: CommitId, 
+  targetCommitId: CommitId,
+  files: FileChange[]
+): Promise<void> {
+  console.log(`📁 Executing move files: ${files.map(f => f.path).join(', ')} from ${sourceCommitId} to ${targetCommitId}`);
+  
+  const filePaths = files.map(f => f.path);
+  
+  // Use squash with specific file paths to move only those files
+  await executeJjCommand('squash', ['--from', sourceCommitId, '--into', targetCommitId, '--', ...filePaths]);
 }
 
 export async function executeSplit(
@@ -463,29 +539,37 @@ export async function executeSplit(
   await match(target)
     .with({ type: 'before' }, async (t) => {
       // Split files into a new commit before target
-      await $`jj split -r ${sourceCommitId} -B ${t.commitId} -- ${filePaths}`;
+      await executeJjCommand('split', ['-r', sourceCommitId, '--insert-before', t.commitId, '--', ...filePaths]);
     })
     .with({ type: 'after' }, async (t) => {
       // Split files into a new commit after target
-      await $`jj split -r ${sourceCommitId} -A ${t.commitId} -- ${filePaths}`;
+      await executeJjCommand('split', ['-r', sourceCommitId, '--insert-after', t.commitId, '--', ...filePaths]);
     })
     .with({ type: 'new-commit-between' }, async (t) => {
       // Split files into a new commit between two commits
-      // -A means "after" (descendant of) and -B means "before" (ancestor of)
+      // --insert-after means "after" (descendant of) and --insert-before means "before" (ancestor of)
       // To place the split between beforeCommitId and afterCommitId:
       // We want: beforeCommitId → [new split commit] → afterCommitId
-      // So: -A beforeCommitId (new commit is after/descendant of beforeCommitId)
-      //     -B afterCommitId (new commit is before/ancestor of afterCommitId)
-      await $`jj split -r ${sourceCommitId} -A ${t.beforeCommitId} -B ${t.afterCommitId} -- ${filePaths}`;
+      // So: --insert-after beforeCommitId (new commit is after/descendant of beforeCommitId)
+      //     --insert-before afterCommitId (new commit is before/ancestor of afterCommitId)
+      
+      // However, if afterCommitId is the same as sourceCommitId, we can't use it as --insert-before
+      // because that would create a loop. In this case, just use --insert-after beforeCommitId
+      if (t.afterCommitId === sourceCommitId) {
+        console.log(`⚠️ afterCommitId same as sourceCommitId, using only --insert-after ${t.beforeCommitId}`);
+        await executeJjCommand('split', ['-r', sourceCommitId, '--insert-after', t.beforeCommitId, '--', ...filePaths]);
+      } else {
+        await executeJjCommand('split', ['-r', sourceCommitId, '--insert-after', t.beforeCommitId, '--insert-before', t.afterCommitId, '--', ...filePaths]);
+      }
     })
     .with({ type: 'existing-commit' }, async (t) => {
-      // Split files into an existing commit
-      await $`jj split -r ${sourceCommitId} --into ${t.commitId} -- ${filePaths}`;
+      // Split files into an existing commit (use destination)
+      await executeJjCommand('split', ['-r', sourceCommitId, '-d', t.commitId, '--', ...filePaths]);
     })
     .with({ type: 'new-branch' }, async (t) => {
       // Create new branch and split files there
       // This is a two-step process: split, then move to new branch
-      await $`jj split -r ${sourceCommitId} -- ${filePaths}`;
+      await executeJjCommand('split', ['-r', sourceCommitId, '--', ...filePaths]);
       // TODO: The split creates a new commit, we need to move it to the target branch
       // The exact semantics need clarification for new-branch target
       console.log(`⚠️ new-branch split target needs proper implementation. fromCommitId: ${t.fromCommitId}`);

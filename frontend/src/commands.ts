@@ -1,9 +1,69 @@
-import type { CommitId, ChangeId, FileChange, CommandTarget } from "../../backend/src/repo-parser";
+import type { CommitId, FileChange, CommandTarget } from "../../backend/src/repo-parser";
 
 // Re-export CommandTarget for convenience
 export type { CommandTarget };
 
-// Domain commands for git operations
+// Intention-based commands framed in the context of our UIs
+
+// File manipulation intentions
+export interface MoveFileToChangeCommand {
+  type: 'move-file-to-change';
+  file: FileChange;
+  sourceChangeId: CommitId;
+  targetChangeId: CommitId;
+}
+
+export interface SplitFileFromChangeCommand {
+  type: 'split-file-from-change';
+  file: FileChange;
+  sourceChangeId: CommitId;
+  target: CommandTarget; // Where to put the new change
+}
+
+// Change manipulation intentions
+export interface RebaseChangeCommand {
+  type: 'rebase-change';
+  changeId: CommitId;
+  newParent: CommandTarget;
+}
+
+export interface ReorderChangeCommand {
+  type: 'reorder-change';
+  changeId: CommitId;
+  newPosition: CommandTarget;
+}
+
+export interface SquashChangeIntoCommand {
+  type: 'squash-change-into';
+  sourceChangeId: CommitId;
+  targetChangeId: CommitId;
+}
+
+// Evolog-based intentions
+export interface SplitAtEvoLogCommand {
+  type: 'split-at-evolog';
+  changeId: CommitId;
+  evoLogIndex: number; // Which evolog entry to split at
+  files?: FileChange[]; // Optional: specific files to split
+}
+
+// Create new change intentions
+export interface CreateNewChangeCommand {
+  type: 'create-new-change';
+  files: FileChange[];
+  parent: CommandTarget;
+}
+
+export type IntentionCommand = 
+  | MoveFileToChangeCommand
+  | SplitFileFromChangeCommand
+  | RebaseChangeCommand
+  | ReorderChangeCommand
+  | SquashChangeIntoCommand
+  | SplitAtEvoLogCommand
+  | CreateNewChangeCommand;
+
+// Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {
   type: 'rebase';
   commitId: CommitId;
@@ -30,4 +90,7 @@ export interface MoveFilesCommand {
   files: FileChange[];
 }
 
-export type GitCommand = RebaseCommand | SquashCommand | SplitCommand | MoveFilesCommand;
+export type LegacyCommand = RebaseCommand | SquashCommand | SplitCommand | MoveFilesCommand;
+
+// Union of all commands
+export type GitCommand = IntentionCommand | LegacyCommand;
