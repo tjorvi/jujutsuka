@@ -1,6 +1,8 @@
-import { queries, useQuery } from './api';
+import { useState } from 'react';
+import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useDragDrop } from './useDragDrop';
+import { llmService } from './llmService';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
@@ -10,6 +12,9 @@ interface FileListPanelProps {
 
 export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath }: FileListPanelProps) {
   const { draggedFile, setDraggedFile, setDraggedFromCommit } = useDragDrop();
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [loadingSummaries, setLoadingSummaries] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
@@ -21,6 +26,39 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
     queries.evolog, 
     { commitId: selectedCommitId || '' }
   );
+
+  const handleSummarizeAll = async () => {
+    if (!selectedCommitId || fileChanges.kind !== 'success') return;
+    
+    setLoadingSummaries(true);
+    setSummaryError(null);
+    const newSummaries: Record<string, string> = {};
+
+    try {
+      // Get diffs for all files and summarize them
+      for (const fileChange of fileChanges.data) {
+        try {
+          // Fetch the diff for this file using tRPC client
+          const diff = await trpc.fileDiff.query({ 
+            commitId: selectedCommitId, 
+            filePath: fileChange.path 
+          });
+
+          // Summarize with LLM (direct OpenAI call from frontend)
+          const summary = await llmService.summarizeDiff(fileChange.path, diff);
+          newSummaries[fileChange.path] = summary;
+        } catch (error) {
+          console.error(`Failed to summarize ${fileChange.path}:`, error);
+          newSummaries[fileChange.path] = `Error: ${error instanceof Error ? error.message : 'Failed to generate summary'}`;
+        }
+      }
+      setSummaries(newSummaries);
+    } catch (error) {
+      setSummaryError(error instanceof Error ? error.message : 'Failed to generate summaries');
+    } finally {
+      setLoadingSummaries(false);
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -183,6 +221,100 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                 </span>
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* AI Summaries Section */}
+      {selectedCommitId && fileChanges.kind === 'success' && fileChanges.data.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            marginBottom: '8px',
+          }}>
+            <h3 style={{ 
+              margin: 0, 
+              fontSize: '14px', 
+              color: '#111827',
+            }}>
+              🤖 AI Summaries
+            </h3>
+            <button
+              onClick={handleSummarizeAll}
+              disabled={loadingSummaries}
+              style={{
+                padding: '4px 12px',
+                background: loadingSummaries ? '#d1d5db' : '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: loadingSummaries ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontWeight: '500',
+              }}
+            >
+              {loadingSummaries ? 'Summarizing...' : 'Summarize All'}
+            </button>
+          </div>
+
+          {summaryError && (
+            <div style={{ 
+              padding: '8px', 
+              background: '#fee2e2', 
+              border: '1px solid #ef4444',
+              borderRadius: '4px',
+              color: '#991b1b',
+              fontSize: '12px',
+              marginBottom: '8px',
+            }}>
+              {summaryError}
+            </div>
+          )}
+
+          {Object.keys(summaries).length > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '8px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+            }}>
+              {fileChanges.data.map((fileChange) => {
+                const summary = summaries[fileChange.path];
+                if (!summary) return null;
+                
+                return (
+                  <div 
+                    key={fileChange.path}
+                    style={{
+                      padding: '8px',
+                      background: 'white',
+                      borderRadius: '4px',
+                      border: '1px solid #e5e7eb',
+                      fontSize: '11px',
+                    }}
+                  >
+                    <div style={{ 
+                      fontFamily: 'monospace',
+                      fontWeight: '600',
+                      color: '#374151',
+                      marginBottom: '4px',
+                      fontSize: '10px',
+                    }}>
+                      {fileChange.path}
+                    </div>
+                    <div style={{ 
+                      color: '#6b7280',
+                      lineHeight: '1.4',
+                    }}>
+                      {summary}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
