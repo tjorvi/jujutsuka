@@ -1,7 +1,7 @@
 import { publicProcedure, router } from './trpc.ts';
-import { 
-  buildCommitGraph, 
-  buildStackGraph, 
+import {
+  buildCommitGraph,
+  buildStackGraph,
   getRepositoryCommits,
   getCommitFileChanges,
   getCommitEvolog,
@@ -16,66 +16,82 @@ import {
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
 import { z } from 'zod';
 import type { GitCommand, IntentionCommand, LegacyCommand } from '../../frontend/src/commands.ts';
+import { watchRepo } from './watcher.ts';
+import { observable } from '@trpc/server/observable';
 
 export const appRouter = router({
   graph: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .query(async ({ input }) => {
+        const commits = await getRepositoryCommits(input.repoPath);
         const graph = buildCommitGraph(commits);
         return graph;
     }),
   stacks: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .query(async ({ input }) => {
+        const commits = await getRepositoryCommits(input.repoPath);
         const stackGraph = buildStackGraph(commits);
         return stackGraph;
     }),
   layoutStacks: publicProcedure
-    .query(async () => {
-        const commits = await getRepositoryCommits();
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .query(async ({ input }) => {
+        const commits = await getRepositoryCommits(input.repoPath);
         const stackGraph = buildStackGraph(commits);
         const enhancedStackGraph = enhanceStackGraphForLayout(stackGraph);
         return enhancedStackGraph;
     }),
   fileChanges: publicProcedure
     .input(z.object({
+      repoPath: z.string(),
       commitId: z.string()
     }))
     .query(async ({ input }) => {
         const commitId = createCommitId(input.commitId);
-        const fileChanges = await getCommitFileChanges(commitId);
+        const fileChanges = await getCommitFileChanges(input.repoPath, commitId);
         return fileChanges;
     }),
   commitStats: publicProcedure
     .input(z.object({
+      repoPath: z.string(),
       commitId: z.string()
     }))
     .query(async ({ input }) => {
         const commitId = createCommitId(input.commitId);
-        const stats = await getCommitStats(commitId);
+        const stats = await getCommitStats(input.repoPath, commitId);
         return stats;
     }),
   evolog: publicProcedure
     .input(z.object({
+      repoPath: z.string(),
       commitId: z.string()
     }))
     .query(async ({ input }) => {
         const commitId = createCommitId(input.commitId);
-        const evolog = await getCommitEvolog(commitId);
+        const evolog = await getCommitEvolog(input.repoPath, commitId);
         return evolog;
     }),
   fileDiff: publicProcedure
     .input(z.object({
+      repoPath: z.string(),
       commitId: z.string(),
       filePath: z.string()
     }))
     .query(async ({ input }) => {
         const commitId = createCommitId(input.commitId);
-        const diff = await getFileDiff(commitId, input.filePath);
+        const diff = await getFileDiff(input.repoPath, commitId, input.filePath);
         return diff;
     }),
   executeCommand: publicProcedure
     .input(z.object({
+      repoPath: z.string(),
       command: z.union([
         // Intention-based commands
         z.object({
@@ -253,88 +269,92 @@ export const appRouter = router({
         }
       };
       
+      const repoPath = input.repoPath;
+
       try {
         // Handle intention-based commands
         if (command.type === 'move-file-to-change') {
           // Translate to move-files command
           await executeMoveFiles(
-            createCommitId(command.sourceChangeId), 
-            createCommitId(command.targetChangeId), 
+            repoPath,
+            createCommitId(command.sourceChangeId),
+            createCommitId(command.targetChangeId),
             [command.file]
           );
-          
+
         } else if (command.type === 'split-file-from-change') {
           // Translate to split command
           const sourceCommitId = createCommitId(command.sourceChangeId);
           const target = parseCommandTarget(command.target);
-          await executeSplit(sourceCommitId, [command.file], target);
-          
+          await executeSplit(repoPath, sourceCommitId, [command.file], target);
+
         } else if (command.type === 'rebase-change') {
           // Translate to rebase command
           const changeId = createCommitId(command.changeId);
           const target = parseCommandTarget(command.newParent);
-          await executeRebase(changeId, target);
-          
+          await executeRebase(repoPath, changeId, target);
+
         } else if (command.type === 'reorder-change') {
           // Reordering is essentially a rebase to a new position
           const changeId = createCommitId(command.changeId);
           const target = parseCommandTarget(command.newPosition);
-          await executeRebase(changeId, target);
-          
+          await executeRebase(repoPath, changeId, target);
+
         } else if (command.type === 'squash-change-into') {
           // Translate to squash command
           await executeSquash(
-            createCommitId(command.sourceChangeId), 
+            repoPath,
+            createCommitId(command.sourceChangeId),
             createCommitId(command.targetChangeId)
           );
-          
+
         } else if (command.type === 'split-at-evolog') {
           // For now, treat evolog split as a regular split
           // TODO: Implement evolog-specific logic when we have evolog integration
           const changeId = createCommitId(command.changeId);
           const files = command.files || [];
-          
+
           // Create a new commit after this one for the split
           const target = {
             type: 'after' as const,
             commitId: changeId
           };
-          
+
           if (files.length > 0) {
-            await executeSplit(changeId, files, target);
+            await executeSplit(repoPath, changeId, files, target);
           } else {
             // If no files specified, we need to get all files from the commit
             // For now, throw an error until we implement file discovery
             throw new Error('Split at evolog requires specific files to be provided');
           }
-          
+
         } else if (command.type === 'create-new-change') {
           // Create a new commit with the specified files
           const target = parseCommandTarget(command.parent);
-          
+
           // For creating a new change, we need a source commit to split from
           // This is a limitation of the current implementation
           throw new Error('Create new change not yet implemented - requires source commit selection');
-          
+
         } else if (command.type === 'rebase') {
           const commitId = createCommitId(command.commitId);
           const target = parseCommandTarget(command.target);
-          await executeRebase(commitId, target);
-          
+          await executeRebase(repoPath, commitId, target);
+
         } else if (command.type === 'squash') {
           const sourceCommitId = createCommitId(command.sourceCommitId);
           const targetCommitId = createCommitId(command.targetCommitId);
-          await executeSquash(sourceCommitId, targetCommitId);
-          
+          await executeSquash(repoPath, sourceCommitId, targetCommitId);
+
         } else if (command.type === 'split') {
           const sourceCommitId = createCommitId(command.sourceCommitId);
           const target = parseCommandTarget(command.target);
-          await executeSplit(sourceCommitId, command.files, target);
-          
+          await executeSplit(repoPath, sourceCommitId, command.files, target);
+
         } else if (command.type === 'move-files') {
           const sourceCommitId = createCommitId(command.sourceCommitId);
           const targetCommitId = createCommitId(command.targetCommitId);
-          await executeMoveFiles(sourceCommitId, targetCommitId, command.files);
+          await executeMoveFiles(repoPath, sourceCommitId, targetCommitId, command.files);
           
         } else {
           throw new Error(`Unknown command type: ${(command as any).type}`);
@@ -347,6 +367,32 @@ export const appRouter = router({
         console.error('❌ Command execution failed:', error);
         throw new Error(`Failed to execute ${command.type} command: ${error instanceof Error ? error.message : String(error)}`);
       }
+    }),
+
+  // Subscription for repo changes
+  watchRepoChanges: publicProcedure
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .subscription(({ input }) => {
+      return observable<{ timestamp: number }>((emit) => {
+        console.log(`🔔 Client subscribed to repo changes: ${input.repoPath}`);
+
+        // Send initial event
+        emit.next({ timestamp: Date.now() });
+
+        // Watch for file system changes
+        const unsubscribe = watchRepo(input.repoPath, () => {
+          console.log(`🔔 Emitting change event for ${input.repoPath}`);
+          emit.next({ timestamp: Date.now() });
+        });
+
+        // Return cleanup function
+        return () => {
+          console.log(`🔕 Client unsubscribed from repo changes: ${input.repoPath}`);
+          unsubscribe();
+        };
+      });
     }),
 });
 

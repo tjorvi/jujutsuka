@@ -1,5 +1,6 @@
 import { queries, useQuery } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
+import { useGraphStore } from './graphStore';
 
 interface DiffPanelProps {
   selectedCommitId?: CommitId;
@@ -7,14 +8,16 @@ interface DiffPanelProps {
 }
 
 export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps) {
+  const repoPath = useGraphStore(state => state.repoPath);
   const fileDiff = useQuery(
-    queries.fileDiff, 
-    { 
-      commitId: selectedCommitId || '', 
-      filePath: selectedFilePath || '' 
+    queries.fileDiff,
+    {
+      repoPath,
+      commitId: selectedCommitId || '',
+      filePath: selectedFilePath || ''
     },
     {
-      enabled: Boolean(selectedCommitId && selectedFilePath)
+      enabled: Boolean(repoPath && selectedCommitId && selectedFilePath)
     }
   );
 

@@ -3,6 +3,7 @@ import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useDragDrop } from './useDragDrop';
 import { llmService } from './llmService';
+import { useGraphStore } from './graphStore';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
@@ -57,16 +58,19 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [loadingSummaries, setLoadingSummaries] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  
+  const repoPath = useGraphStore(state => state.repoPath);
+
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
-    queries.fileChanges, 
-    { commitId: selectedCommitId || '' }
+    queries.fileChanges,
+    { repoPath, commitId: selectedCommitId || '' },
+    { enabled: !!repoPath && !!selectedCommitId }
   );
 
   const evolog = useQuery(
-    queries.evolog, 
-    { commitId: selectedCommitId || '' }
+    queries.evolog,
+    { repoPath, commitId: selectedCommitId || '' },
+    { enabled: !!repoPath && !!selectedCommitId }
   );
 
   const handleSummarizeAll = async () => {

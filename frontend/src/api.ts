@@ -1,13 +1,20 @@
-import { createTRPCClient, httpLink } from '@trpc/client';
+import { createTRPCClient, httpLink, httpSubscriptionLink, splitLink } from '@trpc/client';
 import type { AppRouter } from '../../backend/src/routes';
 import { useEffect, useState } from 'react';
 import superjson from 'superjson';
 
 export const trpc = createTRPCClient<AppRouter>({
   links: [
-    httpLink({
-      url: '/trpc', // Frontend calls /trpc, proxy rewrites to backend root
-      transformer: superjson,
+    splitLink({
+      condition: (op) => op.type === 'subscription',
+      true: httpSubscriptionLink({
+        url: '/trpc',
+        transformer: superjson,
+      }),
+      false: httpLink({
+        url: '/trpc',
+        transformer: superjson,
+      }),
     }),
   ],
 });

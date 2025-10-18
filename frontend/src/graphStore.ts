@@ -10,9 +10,11 @@ interface GraphState {
   // Data
   commitGraph: CommitGraph | null;
   isExecutingCommand: boolean; // Loading state for command execution
-  
+  repoPath: string;
+
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
+  setRepoPath: (repoPath: string) => void;
   refreshGraphData: () => Promise<void>;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
@@ -38,16 +40,28 @@ export const useGraphStore = create<GraphState>()(
       // Initial state
       commitGraph: null,
       isExecutingCommand: false,
+      repoPath: '',
 
       // Set fresh data from the server
       setCommitGraph: (commitGraph) => {
         set({ commitGraph });
       },
 
+      // Set repository path
+      setRepoPath: (repoPath) => {
+        set({ repoPath });
+      },
+
       // Refresh data from server
       refreshGraphData: async () => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.warn('Cannot refresh graph data: no repository path set');
+          return;
+        }
+
         try {
-          const commitGraph = await queries.graph.query(undefined, { signal: new AbortController().signal });
+          const commitGraph = await queries.graph.query({ repoPath }, { signal: new AbortController().signal });
           set({ commitGraph });
         } catch (error) {
           console.error('Failed to refresh graph data:', error);
@@ -56,11 +70,17 @@ export const useGraphStore = create<GraphState>()(
 
       // Core command execution
       executeCommand: async (command) => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.error('Cannot execute command: no repository path set');
+          return;
+        }
+
         console.log('🎯 EXECUTING INTENTION COMMAND:', command);
         set({ isExecutingCommand: true });
 
         try {
-          await mutations.executeCommand.mutate({ command });
+          await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Intention command executed successfully');
           await get().refreshGraphData();
         } catch (error) {
@@ -138,13 +158,19 @@ export const useGraphStore = create<GraphState>()(
       },
 
       executeRebase: async (commitId, target) => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.error('Cannot execute rebase: no repository path set');
+          return;
+        }
+
         const command: GitCommand = { type: 'rebase', commitId, target };
         console.log('🔄 REBASE COMMAND:', command);
 
         set({ isExecutingCommand: true });
 
         try {
-          await mutations.executeCommand.mutate({ command });
+          await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Rebase command executed successfully');
           await get().refreshGraphData();
         } catch (error) {
@@ -155,13 +181,19 @@ export const useGraphStore = create<GraphState>()(
       },
 
       executeSquash: async (sourceCommitId, targetCommitId) => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.error('Cannot execute squash: no repository path set');
+          return;
+        }
+
         const command: GitCommand = { type: 'squash', sourceCommitId, targetCommitId };
         console.log('🔧 SQUASH COMMAND:', command);
 
         set({ isExecutingCommand: true });
 
         try {
-          await mutations.executeCommand.mutate({ command });
+          await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Squash command executed successfully');
           await get().refreshGraphData();
         } catch (error) {
@@ -172,13 +204,19 @@ export const useGraphStore = create<GraphState>()(
       },
 
       executeSplit: async (sourceCommitId, files, target) => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.error('Cannot execute split: no repository path set');
+          return;
+        }
+
         const command: GitCommand = { type: 'split', sourceCommitId, files, target };
         console.log('✂️ SPLIT COMMAND:', command);
 
         set({ isExecutingCommand: true });
 
         try {
-          await mutations.executeCommand.mutate({ command });
+          await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Split command executed successfully');
           await get().refreshGraphData();
         } catch (error) {
@@ -189,13 +227,19 @@ export const useGraphStore = create<GraphState>()(
       },
 
       executeMoveFiles: async (sourceCommitId, targetCommitId, files) => {
+        const { repoPath } = get();
+        if (!repoPath) {
+          console.error('Cannot execute move files: no repository path set');
+          return;
+        }
+
         const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files };
         console.log('📁 MOVE FILES COMMAND:', command);
 
         set({ isExecutingCommand: true });
 
         try {
-          await mutations.executeCommand.mutate({ command });
+          await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Move files command executed successfully');
           await get().refreshGraphData();
         } catch (error) {

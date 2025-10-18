@@ -4,6 +4,7 @@ import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
 import { queries, useQuery } from './api';
+import { useGraphStore } from './graphStore';
 
 interface StackComponentProps {
   stack: Stack;
@@ -193,20 +194,23 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
   const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit, handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
   const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
+  const repoPath = useGraphStore(state => state.repoPath);
 
   // Fetch stats for all commits in the stack
   useEffect(() => {
+    if (!repoPath) return;
+
     const fetchStats = async () => {
       const stats: Record<CommitId, { additions: number; deletions: number }> = {};
       for (const commitId of stack.commits) {
-        const result = await queries.commitStats.query({ commitId });
+        const result = await queries.commitStats.query({ repoPath, commitId });
         stats[commitId] = result;
       }
       setCommitStats(stats);
     };
-    
+
     fetchStats();
-  }, [stack.commits]);
+  }, [stack.commits, repoPath]);
 
   // Debug: log first commit data to see what we're getting
   useEffect(() => {

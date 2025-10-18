@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { queries, useQuery } from './api';
+import { queries, useQuery, trpc } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
 
@@ -7,10 +7,40 @@ import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
  * Hook that manages fetching graph data and computing stack graph
  */
 export function useGraphData() {
-  const graphQuery = useQuery(queries.graph, undefined);
+  const repoPath = useGraphStore(state => state.repoPath);
+  const graphQuery = useQuery(queries.graph, { repoPath }, { enabled: !!repoPath });
   const setCommitGraph = useGraphStore(state => state.setCommitGraph);
+  const refreshGraphData = useGraphStore(state => state.refreshGraphData);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
+
+  // Subscribe to repository changes via SSE
+  useEffect(() => {
+    if (!repoPath) return;
+
+    console.log('🔔 Subscribing to repo changes for:', repoPath);
+    const subscription = trpc.watchRepoChanges.subscribe(
+      { repoPath },
+      {
+        onData: (data) => {
+          console.log('🔔 Repo change detected, refreshing graph data', data);
+          // Don't refresh if we're already executing a command
+          // (command execution already triggers a refresh)
+          if (!isExecutingCommand) {
+            refreshGraphData();
+          }
+        },
+        onError: (err) => {
+          console.error('❌ Subscription error:', err);
+        },
+      }
+    );
+
+    return () => {
+      console.log('🔕 Unsubscribing from repo changes');
+      subscription.unsubscribe();
+    };
+  }, [repoPath, refreshGraphData, isExecutingCommand]);
   
   // Debug command execution state changes
   useEffect(() => {

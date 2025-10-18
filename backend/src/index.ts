@@ -1,7 +1,7 @@
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
-import { 
-  buildCommitGraph, 
-  buildStackGraph, 
+import {
+  buildCommitGraph,
+  buildStackGraph,
   getRepositoryCommits
 } from './repo-parser.ts';
 import { enhanceStackGraphForLayout } from './layout-utils.ts';
@@ -68,7 +68,7 @@ export type { AppRouter } from './routes.ts';
 if (process.argv.length > 2) {
   runCli();
 } else {
-  // Start web server
+  // Start web server with SSE support for subscriptions
   console.log('Starting web server on http://localhost:3000');
   const server = createHTTPServer({
     router: appRouter,
@@ -77,6 +77,13 @@ if (process.argv.length > 2) {
       enabled: true,
     },
   });
-   
+
   server.listen(3000);
+  console.log('Server supports SSE subscriptions on http://localhost:3000');
+
+  // Cleanup on shutdown
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, closing server...');
+    server.close();
+  });
 }
