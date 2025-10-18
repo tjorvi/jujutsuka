@@ -148,6 +148,8 @@ export async function getRepositoryCommits(): Promise<Commit[]> {
 export interface FileChange {
   path: string;
   status: 'M' | 'A' | 'D' | 'R' | 'C'; // Modified, Added, Deleted, Renamed, Copied
+  additions?: number;
+  deletions?: number;
 }
 
 // Target types for git operations
@@ -181,8 +183,22 @@ export interface EvoLogEntry {
  */
 export async function getCommitFileChanges(commitId: CommitId): Promise<FileChange[]> {
   try {
-    // Use jj diff with --summary to get file change information
-    const { stdout } = await $`jj diff -r ${commitId} --summary`;
+    // First get the summary to get proper status
+    const { stdout: summaryOutput } = await $`jj diff -r ${commitId} --summary`;
+    const statusMap = new Map<string, FileChange['status']>();
+    
+    const summaryLines = summaryOutput.trim().split('\n');
+    for (const line of summaryLines) {
+      if (!line.trim()) continue;
+      const statusMatch = line.match(/^([MADRC])\s+(.+)$/);
+      if (statusMatch) {
+        const [, status, path] = statusMatch;
+        statusMap.set(path.trim(), status as FileChange['status']);
+      }
+    }
+    
+    // Use jj diff with --stat to get file change information with statistics
+    const { stdout } = await $`jj diff -r ${commitId} --stat`;
     
     const changes: FileChange[] = [];
     const lines = stdout.trim().split('\n');
@@ -190,13 +206,23 @@ export async function getCommitFileChanges(commitId: CommitId): Promise<FileChan
     for (const line of lines) {
       if (!line.trim()) continue;
       
-      // Parse the summary format: "M path/to/file" or "A path/to/file" etc.
-      const match = line.match(/^([MADRC])\s+(.+)$/);
+      // Skip the summary line at the end
+      if (line.includes('files changed,')) continue;
+      
+      // Parse the stat format: "path/to/file | 123 ++++++++++++++----"
+      const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+-]+)$/);
       if (match) {
-        const [, status, path] = match;
+        const [, path, , plusMinus] = match;
+        const additions = (plusMinus.match(/\+/g) || []).length;
+        const deletions = (plusMinus.match(/-/g) || []).length;
+        const trimmedPath = path.trim();
+        const status = statusMap.get(trimmedPath) || 'M';
+        
         changes.push({
-          path: path.trim(),
-          status: status as FileChange['status']
+          path: trimmedPath,
+          status,
+          additions,
+          deletions,
         });
       }
     }
@@ -204,6 +230,31 @@ export async function getCommitFileChanges(commitId: CommitId): Promise<FileChan
     return changes;
   } catch (error) {
     return [];
+  }
+}
+
+/**
+ * Get total statistics for a commit (additions and deletions)
+ */
+export async function getCommitStats(commitId: CommitId): Promise<{ additions: number; deletions: number }> {
+  try {
+    const { stdout } = await $`jj diff -r ${commitId} --stat`;
+    const lines = stdout.trim().split('\n');
+    
+    // Find the summary line at the end: "N files changed, X insertions(+), Y deletions(-)"
+    const summaryLine = lines[lines.length - 1];
+    const match = summaryLine.match(/(\d+)\s+insertions?\(\+\),\s+(\d+)\s+deletions?\(-\)/);
+    
+    if (match) {
+      return {
+        additions: parseInt(match[1], 10),
+        deletions: parseInt(match[2], 10),
+      };
+    }
+    
+    return { additions: 0, deletions: 0 };
+  } catch (error) {
+    return { additions: 0, deletions: 0 };
   }
 }
 

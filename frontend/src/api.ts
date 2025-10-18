@@ -18,6 +18,7 @@ export const queries = {
   stacks: trpc.stacks,
   layoutStacks: trpc.layoutStacks,
   fileChanges: trpc.fileChanges,
+  commitStats: trpc.commitStats,
   evolog: trpc.evolog,
   fileDiff: trpc.fileDiff,
 } as const;

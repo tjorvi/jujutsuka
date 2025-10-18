@@ -10,6 +10,48 @@ interface FileListPanelProps {
   selectedFilePath?: string;
 }
 
+// Helper function to create a visual size indicator
+function getSizeIndicator(additions?: number, deletions?: number) {
+  if (additions === undefined || deletions === undefined) {
+    return null;
+  }
+  
+  const total = additions + deletions;
+  const maxBars = 5;
+  
+  // Categorize size
+  let bars = 1;
+  if (total > 100) bars = 5;
+  else if (total > 50) bars = 4;
+  else if (total > 20) bars = 3;
+  else if (total > 5) bars = 2;
+  
+  const additionRatio = total > 0 ? additions / total : 0.5;
+  const additionBars = Math.round(bars * additionRatio);
+  const deletionBars = bars - additionBars;
+  
+  return (
+    <div style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+      {Array(additionBars).fill(0).map((_, i) => (
+        <div key={`add-${i}`} style={{ 
+          width: '3px', 
+          height: '8px', 
+          background: '#10b981',
+          borderRadius: '1px'
+        }} />
+      ))}
+      {Array(deletionBars).fill(0).map((_, i) => (
+        <div key={`del-${i}`} style={{ 
+          width: '3px', 
+          height: '8px', 
+          background: '#ef4444',
+          borderRadius: '1px'
+        }} />
+      ))}
+    </div>
+  );
+}
+
 export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath }: FileListPanelProps) {
   const { draggedFile, setDraggedFile, setDraggedFromCommit } = useDragDrop();
   const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -215,10 +257,12 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                     wordBreak: 'break-all',
                     fontSize: '11px',
                     fontFamily: 'monospace',
+                    flex: 1,
                   }}
                 >
                   {fileChange.path}
                 </span>
+                {getSizeIndicator(fileChange.additions, fileChange.deletions)}
               </div>
             ))
           )}

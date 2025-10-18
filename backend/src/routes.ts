@@ -6,6 +6,7 @@ import {
   getCommitFileChanges,
   getCommitEvolog,
   getFileDiff,
+  getCommitStats,
   createCommitId,
   executeRebase,
   executeSquash,
@@ -44,6 +45,15 @@ export const appRouter = router({
         const commitId = createCommitId(input.commitId);
         const fileChanges = await getCommitFileChanges(commitId);
         return fileChanges;
+    }),
+  commitStats: publicProcedure
+    .input(z.object({
+      commitId: z.string()
+    }))
+    .query(async ({ input }) => {
+        const commitId = createCommitId(input.commitId);
+        const stats = await getCommitStats(commitId);
+        return stats;
     }),
   evolog: publicProcedure
     .input(z.object({

@@ -3,6 +3,7 @@ import type { CommitId, Commit } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
+import { queries, useQuery } from './api';
 
 interface StackComponentProps {
   stack: Stack;
@@ -10,6 +11,50 @@ interface StackComponentProps {
   isInParallelGroup?: boolean;
   selectedCommitId?: CommitId;
   onCommitSelect: (commitId: CommitId) => void;
+}
+
+// Helper function to create a visual size indicator for commits
+function getCommitSizeIndicator(additions: number, deletions: number) {
+  const total = additions + deletions;
+  
+  // Categorize size
+  let size: 'tiny' | 'small' | 'medium' | 'large' | 'huge';
+  let label: string;
+  
+  if (total === 0) {
+    size = 'tiny';
+    label = '';
+  } else if (total <= 10) {
+    size = 'tiny';
+    label = 'XS';
+  } else if (total <= 50) {
+    size = 'small';
+    label = 'S';
+  } else if (total <= 200) {
+    size = 'medium';
+    label = 'M';
+  } else if (total <= 500) {
+    size = 'large';
+    label = 'L';
+  } else {
+    size = 'huge';
+    label = 'XL';
+  }
+  
+  const colors = {
+    tiny: '#d1d5db',
+    small: '#93c5fd',
+    medium: '#fbbf24',
+    large: '#fb923c',
+    huge: '#ef4444',
+  };
+  
+  return {
+    size,
+    label,
+    color: colors[size],
+    tooltip: `+${additions} -${deletions}`,
+  };
 }
 
 interface DropZoneProps {
@@ -147,6 +192,21 @@ function DropZone({ targetCommitId, position, beforeCommitId, afterCommitId, chi
 function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, onCommitSelect }: StackComponentProps) {
   const { draggedFile, draggedFromCommit, draggedCommit, setDraggedCommit, handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
+  const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
+
+  // Fetch stats for all commits in the stack
+  useEffect(() => {
+    const fetchStats = async () => {
+      const stats: Record<CommitId, { additions: number; deletions: number }> = {};
+      for (const commitId of stack.commits) {
+        const result = await queries.commitStats.query({ commitId });
+        stats[commitId] = result;
+      }
+      setCommitStats(stats);
+    };
+    
+    fetchStats();
+  }, [stack.commits]);
 
   // Debug: log first commit data to see what we're getting
   useEffect(() => {
@@ -312,8 +372,29 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 }}
               >
                 <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <div style={{ fontWeight: '600', color: '#374151' }}>
-                    change: {commit.changeId.slice(0, 8)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: '600', color: '#374151' }}>
+                      change: {commit.changeId.slice(0, 8)}
+                    </div>
+                    {commitStats[commitId] && (() => {
+                      const { additions, deletions } = commitStats[commitId];
+                      const indicator = getCommitSizeIndicator(additions, deletions);
+                      return indicator.label ? (
+                        <div 
+                          style={{ 
+                            fontSize: '9px',
+                            fontWeight: 'bold',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: indicator.color,
+                            color: 'white',
+                          }}
+                          title={indicator.tooltip}
+                        >
+                          {indicator.label}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                   <div style={{ fontSize: '9px', color: '#9ca3af' }}>
                     commit: {commitId.slice(0, 8)}
