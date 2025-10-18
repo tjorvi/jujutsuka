@@ -19,6 +19,7 @@ export const queries = {
   layoutStacks: trpc.layoutStacks,
   fileChanges: trpc.fileChanges,
   evolog: trpc.evolog,
+  fileDiff: trpc.fileDiff,
 } as const;
 
 export const mutations = {
@@ -39,11 +40,18 @@ type QueryState<T> = Idle | Loading | Failure | Success<T>;
 
 export function useQuery<Parameters, R>(
     { query }: { query: (input: Parameters, options: { signal: AbortSignal }) => Promise<R> },
-    input: Parameters
+    input: Parameters,
+    options?: { enabled?: boolean }
 ) {
     const [state, setState] = useState<QueryState<R>>({ kind: 'idle' });
+    const enabled = options?.enabled ?? true;
 
     useEffect(() => {
+        if (!enabled) {
+            setState({ kind: 'idle' });
+            return;
+        }
+
         const controller = new AbortController();
 
         async function fetchData() {
@@ -66,7 +74,7 @@ export function useQuery<Parameters, R>(
             setState({ kind: 'idle' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [JSON.stringify(input), query]);
+    }, [JSON.stringify(input), query, enabled]);
 
 
     return state;

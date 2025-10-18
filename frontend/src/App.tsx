@@ -1,6 +1,7 @@
 import './App.css'
 import { StackGraphComponent } from './StackGraph';
 import { FileListPanel } from './FileListPanel';
+import { DiffPanel } from './DiffPanel';
 import { DragDropProvider } from './DragDropContext';
 import { useState } from 'react';
 import type { CommitId } from "../../backend/src/repo-parser";
@@ -17,6 +18,13 @@ function App() {
     commitGraph 
   } = useGraphData();
   const [selectedCommitId, setSelectedCommitId] = useState<CommitId | undefined>();
+  const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
+
+  // Reset selected file when commit changes
+  const handleCommitSelect = (commitId: CommitId | undefined) => {
+    setSelectedCommitId(commitId);
+    setSelectedFilePath(undefined);
+  };
 
   return (
     <DragDropProvider>
@@ -40,13 +48,23 @@ function App() {
               stackGraph={stackGraph} 
               commitGraph={commitGraph}
               selectedCommitId={selectedCommitId}
-              onCommitSelect={setSelectedCommitId}
+              onCommitSelect={handleCommitSelect}
             />
           )}
         </div>
 
         {/* File list panel */}
-        <FileListPanel selectedCommitId={selectedCommitId} />
+        <FileListPanel 
+          selectedCommitId={selectedCommitId} 
+          onFileSelect={setSelectedFilePath}
+          selectedFilePath={selectedFilePath}
+        />
+
+        {/* Diff panel */}
+        <DiffPanel 
+          selectedCommitId={selectedCommitId}
+          selectedFilePath={selectedFilePath}
+        />
       </div>
     </DragDropProvider>
   )

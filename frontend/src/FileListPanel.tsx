@@ -4,9 +4,11 @@ import { useDragDrop } from './useDragDrop';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
+  onFileSelect?: (filePath: string) => void;
+  selectedFilePath?: string;
 }
 
-export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
+export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath }: FileListPanelProps) {
   const { draggedFile, setDraggedFile, setDraggedFromCommit } = useDragDrop();
   
   // Use a placeholder commit ID when none is selected, and handle it in the render
@@ -119,6 +121,7 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
               <div 
                 key={index}
                 draggable={true}
+                onClick={() => onFileSelect?.(fileChange.path)}
                 onDragStart={(e) => {
                   setDraggedFile(fileChange);
                   setDraggedFromCommit(selectedCommitId!);
@@ -131,26 +134,26 @@ export function FileListPanel({ selectedCommitId }: FileListPanelProps) {
                 }}
                 style={{
                   padding: '8px 12px',
-                  background: 'white',
+                  background: selectedFilePath === fileChange.path ? '#dbeafe' : 'white',
                   borderRadius: '6px',
-                  border: '1px solid #e5e7eb',
+                  border: selectedFilePath === fileChange.path ? '2px solid #3b82f6' : '1px solid #e5e7eb',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                   fontSize: '13px',
-                  cursor: draggedFile ? 'grabbing' : 'grab',
+                  cursor: draggedFile ? 'grabbing' : 'pointer',
                   transition: 'all 0.2s ease',
                   opacity: draggedFile?.path === fileChange.path ? 0.5 : 1,
                 }}
                 onMouseEnter={(e) => {
                   if (!draggedFile) {
-                    e.currentTarget.style.borderColor = '#9ca3af';
+                    e.currentTarget.style.borderColor = selectedFilePath === fileChange.path ? '#3b82f6' : '#9ca3af';
                     e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!draggedFile) {
-                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.borderColor = selectedFilePath === fileChange.path ? '#3b82f6' : '#e5e7eb';
                     e.currentTarget.style.boxShadow = 'none';
                   }
                 }}

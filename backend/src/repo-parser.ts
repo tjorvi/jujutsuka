@@ -247,6 +247,19 @@ export async function getCommitEvolog(commitId: CommitId): Promise<EvoLogEntry[]
 }
 
 /**
+ * Get the diff for a specific file in a commit
+ */
+export async function getFileDiff(commitId: CommitId, filePath: string): Promise<string> {
+  try {
+    // Use jj diff to get the diff for a specific file
+    const { stdout } = await $`jj diff -r ${commitId} ${filePath}`;
+    return stdout;
+  } catch (error) {
+    throw new Error(`Failed to get diff for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
  * Build a commit graph from the parsed commits
  */
 export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: Commit; children: CommitId[] }> {
