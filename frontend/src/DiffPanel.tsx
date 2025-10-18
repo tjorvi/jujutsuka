@@ -24,7 +24,7 @@ export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps
         flex: 1,
         borderLeft: '1px solid #e5e7eb',
         background: '#f9fafb',
-        padding: '20px',
+        padding: '16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -41,25 +41,25 @@ export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps
       flex: 1,
       borderLeft: '1px solid #e5e7eb',
       background: '#1e1e1e',
-      padding: '20px',
+      padding: '12px',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
     }}>
       <h3 style={{ 
-        margin: '0 0 16px 0', 
-        fontSize: '16px', 
+        margin: '0 0 12px 0', 
+        fontSize: '14px', 
         color: '#e5e7eb',
         borderBottom: '1px solid #3e3e3e',
-        paddingBottom: '8px',
+        paddingBottom: '6px',
       }}>
         📄 Diff: {selectedFilePath}
       </h3>
       
       <div style={{ 
-        fontSize: '12px', 
+        fontSize: '11px', 
         color: '#9ca3af', 
-        marginBottom: '12px',
+        marginBottom: '8px',
         fontFamily: 'monospace',
       }}>
         {selectedCommitId.slice(0, 8)}
@@ -83,14 +83,16 @@ export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps
           overflowY: 'auto',
           overflowX: 'auto',
           background: '#0d1117',
-          padding: '16px',
-          borderRadius: '6px',
+          padding: '12px',
+          borderRadius: '4px',
           border: '1px solid #3e3e3e',
-          fontSize: '12px',
+          fontSize: '13px',
           fontFamily: 'monospace',
           color: '#e5e7eb',
           margin: 0,
           whiteSpace: 'pre',
+          textAlign: 'left',
+          lineHeight: '1.4',
         }}>
           {String(fileDiff.data).split('\n').map((line: string, index: number) => {
             let color = '#e5e7eb';

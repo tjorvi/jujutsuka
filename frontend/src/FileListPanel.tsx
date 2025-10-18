@@ -47,11 +47,11 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   if (!selectedCommitId) {
     return (
       <div style={{
-        width: '300px',
-        minWidth: '300px',
+        width: '250px',
+        minWidth: '250px',
         borderLeft: '1px solid #e5e7eb',
         background: '#f9fafb',
-        padding: '20px',
+        padding: '16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -65,28 +65,28 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
 
   return (
     <div style={{
-      width: '300px',
-      minWidth: '300px',
+      width: '250px',
+      minWidth: '250px',
       borderLeft: '1px solid #e5e7eb',
       background: '#f9fafb',
-      padding: '20px',
+      padding: '16px',
       display: 'flex',
       flexDirection: 'column',
     }}>
       <h3 style={{ 
-        margin: '0 0 16px 0', 
-        fontSize: '16px', 
+        margin: '0 0 10px 0', 
+        fontSize: '14px', 
         color: '#111827',
         borderBottom: '1px solid #e5e7eb',
-        paddingBottom: '8px',
+        paddingBottom: '6px',
       }}>
         📁 Modified Files
       </h3>
       
       <div style={{ 
-        fontSize: '12px', 
+        fontSize: '11px', 
         color: '#6b7280', 
-        marginBottom: '12px',
+        marginBottom: '10px',
         fontFamily: 'monospace',
       }}>
         {selectedCommitId.slice(0, 8)}
@@ -108,9 +108,9 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
         <div style={{ 
           display: 'flex', 
           flexDirection: 'column', 
-          gap: '8px',
+          gap: '6px',
           overflowY: 'auto',
-          maxHeight: 'calc(80vh - 120px)',
+          maxHeight: 'calc(80vh - 100px)',
         }}>
           {fileChanges.data.length === 0 ? (
             <div style={{ color: '#6b7280', fontSize: '14px' }}>
@@ -133,14 +133,14 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   setDraggedFromCommit(null);
                 }}
                 style={{
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                   background: selectedFilePath === fileChange.path ? '#dbeafe' : 'white',
-                  borderRadius: '6px',
+                  borderRadius: '4px',
                   border: selectedFilePath === fileChange.path ? '2px solid #3b82f6' : '1px solid #e5e7eb',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
+                  gap: '6px',
+                  fontSize: '12px',
                   cursor: draggedFile ? 'grabbing' : 'pointer',
                   transition: 'all 0.2s ease',
                   opacity: draggedFile?.path === fileChange.path ? 0.5 : 1,
@@ -148,7 +148,7 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                 onMouseEnter={(e) => {
                   if (!draggedFile) {
                     e.currentTarget.style.borderColor = selectedFilePath === fileChange.path ? '#3b82f6' : '#9ca3af';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -158,15 +158,15 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   }
                 }}
               >
-                <span style={{ fontSize: '16px' }}>
+                <span style={{ fontSize: '14px' }}>
                   {getStatusIcon(fileChange.status)}
                 </span>
                 <span 
                   style={{ 
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 'bold',
                     color: getStatusColor(fileChange.status),
-                    minWidth: '20px',
+                    minWidth: '16px',
                   }}
                 >
                   {fileChange.status}
@@ -175,7 +175,7 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   style={{ 
                     color: '#374151',
                     wordBreak: 'break-all',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontFamily: 'monospace',
                   }}
                 >

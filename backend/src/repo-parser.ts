@@ -251,8 +251,8 @@ export async function getCommitEvolog(commitId: CommitId): Promise<EvoLogEntry[]
  */
 export async function getFileDiff(commitId: CommitId, filePath: string): Promise<string> {
   try {
-    // Use jj diff to get the diff for a specific file
-    const { stdout } = await $`jj diff -r ${commitId} ${filePath}`;
+    // Use jj diff with --git flag to get unified diff format with +/- signs
+    const { stdout } = await $`jj diff -r ${commitId} --git ${filePath}`;
     return stdout;
   } catch (error) {
     throw new Error(`Failed to get diff for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
