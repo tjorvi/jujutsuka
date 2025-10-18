@@ -1,7 +1,8 @@
 // Layout utilities for detecting and grouping parallel stacks
 // This is a pure UI concern - no data mutation
 
-import type { StackGraph, StackId } from './repo-parser';
+import type { StackGraph, StackId } from "./stackUtils";
+
 
 /**
  * Information about a group of parallel stacks (diamond pattern)

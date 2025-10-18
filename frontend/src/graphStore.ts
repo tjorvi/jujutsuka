@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { CommitId, FileChange, Commit } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand } from './commands';
-import { mutations, queries } from './api';
+import { mutations } from './api';
 
 type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
 
@@ -50,22 +50,6 @@ export const useGraphStore = create<GraphState>()(
       // Set repository path
       setRepoPath: (repoPath) => {
         set({ repoPath });
-      },
-
-      // Refresh data from server
-      refreshGraphData: async () => {
-        const { repoPath } = get();
-        if (!repoPath) {
-          console.warn('Cannot refresh graph data: no repository path set');
-          return;
-        }
-
-        try {
-          const commitGraph = await queries.graph.query({ repoPath }, { signal: new AbortController().signal });
-          set({ commitGraph });
-        } catch (error) {
-          console.error('Failed to refresh graph data:', error);
-        }
       },
 
       // Core command execution

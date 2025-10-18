@@ -1,62 +1,96 @@
-import { useEffect, useMemo } from 'react';
-import { queries, useQuery, trpc } from './api';
+import { useEffect, useEffectEvent, useMemo } from 'react';
+import { useSubscription, failed, succeeded, subscriptions } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
+import type { Commit, CommitId } from '../../backend/src/repo-parser';
+
+
+/**
+ * Build a commit graph from the parsed commits
+ */
+export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: Commit; children: CommitId[] }> {
+  const graph: Record<CommitId, { commit: Commit; children: CommitId[] }> = {};
+  
+  // Initialize all commits in the graph
+  for (const commit of commits) {
+    graph[commit.id] = { commit, children: [] };
+  }
+  
+  // Build parent-child relationships
+  for (const commit of commits) {
+    for (const parentId of commit.parents) {
+      const parent = graph[parentId];
+      if (parent) {
+        parent.children.push(commit.id);
+      }
+    }
+  }
+  
+  return graph;
+}
+
+// Branded string type for stack IDs
+declare const StackIdBrand: unique symbol;
+export type StackId = string & { readonly [StackIdBrand]: true };
+
+export function createStackId(value: string): StackId {
+  return value as StackId;
+}
+
+/**
+ * Represents a linear sequence of commits (no branching/merging within the stack)
+ */
+export interface Stack {
+  id: StackId;
+  commits: CommitId[];  // Ordered from oldest (bottom) to newest (top)
+  parentStacks: StackId[];  // Stacks that this stack depends on
+  childStacks: StackId[];   // Stacks that depend on this stack
+}
+
+/**
+ * Information about connections between stacks
+ */
+export interface StackConnection {
+  from: StackId;
+  to: StackId;
+  type: 'linear' | 'merge' | 'branch';
+}
+
+/**
+ * Result of stack preprocessing
+ */
+export interface StackGraph {
+  stacks: Record<StackId, Stack>;
+  connections: StackConnection[];
+  rootStacks: StackId[];  // Stacks with no parents
+  leafStacks: StackId[];  // Stacks with no children
+}
 
 /**
  * Hook that manages fetching graph data and computing stack graph
  */
 export function useGraphData() {
   const repoPath = useGraphStore(state => state.repoPath);
-  const graphQuery = useQuery(queries.graph, { repoPath }, { enabled: !!repoPath });
   const setCommitGraph = useGraphStore(state => state.setCommitGraph);
-  const refreshGraphData = useGraphStore(state => state.refreshGraphData);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
 
-  // Subscribe to repository changes via SSE
-  useEffect(() => {
-    if (!repoPath) return;
+  const commitsSubscription = useSubscription(subscriptions.watchRepoChanges, { repoPath });
 
-    console.log('🔔 Subscribing to repo changes for:', repoPath);
-    const subscription = trpc.watchRepoChanges.subscribe(
-      { repoPath },
-      {
-        onData: (data) => {
-          console.log('🔔 Repo change detected, refreshing graph data', data);
-          // Don't refresh if we're already executing a command
-          // (command execution already triggers a refresh)
-          if (!isExecutingCommand) {
-            refreshGraphData();
-          }
-        },
-        onError: (err) => {
-          console.error('❌ Subscription error:', err);
-        },
-      }
-    );
+  const onNewGraph = useEffectEvent((commits: Commit[]) => {
+    console.log('📊 Syncing query data to store');
+    const builtGraph = buildCommitGraph(commits);
+    setCommitGraph(builtGraph);
+  });
 
-    return () => {
-      console.log('🔕 Unsubscribing from repo changes');
-      subscription.unsubscribe();
-    };
-  }, [repoPath, refreshGraphData, isExecutingCommand]);
-  
-  // Debug command execution state changes
   useEffect(() => {
-    console.log('📊 useGraphData - isExecutingCommand changed:', isExecutingCommand);
-    if (commitGraph) {
-      console.log('📊 useGraphData - commitGraph keys:', Object.keys(commitGraph).length);
+    if (commitsSubscription.kind === 'success') {
+      const repo = commitsSubscription.data;
+      console.log(`📥 Received ${repo.commits.length} commits from subscription, op head ${repo.opHead}`);
+      onNewGraph(repo.commits);
     }
-  }, [isExecutingCommand, commitGraph]);
+  }, [commitsSubscription]); // eslint is confused here, according to the docs useEffectEvent shouldn't be listed
 
-  // Sync successful queries to the store
-  useEffect(() => {
-    if (graphQuery.kind === 'success') {
-      console.log('📊 Syncing query data to store');
-      setCommitGraph(graphQuery.data);
-    }
-  }, [graphQuery, setCommitGraph]);  // Compute stack graph from commit graph (memoized)
   const stackGraph = useMemo(() => {
     console.log('🔧 useGraphData: useMemo triggered, commitGraph:', !!commitGraph);
     if (!commitGraph) return null;
@@ -102,16 +136,16 @@ export function useGraphData() {
   }, [commitGraph]);
 
   // Determine loading and error states
-  const isLoading = graphQuery.kind === 'loading';
-  const hasError = graphQuery.kind === 'error';
-  const isSuccess = graphQuery.kind === 'success';
+  const isLoading = commitsSubscription.kind === 'loading';
+  const hasError = failed(commitsSubscription);
+  const isSuccess = succeeded(commitsSubscription);
 
   return {
     isLoading,
     hasError,
     isSuccess,
     isExecutingCommand,
-    error: hasError ? graphQuery.error : null,
+    error: hasError ? commitsSubscription.error : null,
     stackGraph,
     commitGraph,
   };

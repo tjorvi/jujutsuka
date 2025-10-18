@@ -1,8 +1,5 @@
 import { publicProcedure, router } from './trpc.ts';
 import {
-  buildCommitGraph,
-  buildStackGraph,
-  getRepositoryCommits,
   getCommitFileChanges,
   getCommitEvolog,
   getFileDiff,
@@ -11,43 +8,13 @@ import {
   executeRebase,
   executeSquash,
   executeSplit,
-  executeMoveFiles
+  executeMoveFiles,
+  watchRepoChanges
 } from './repo-parser.ts';
-import { enhanceStackGraphForLayout } from './layout-utils.ts';
 import { z } from 'zod';
-import type { GitCommand, IntentionCommand, LegacyCommand } from '../../frontend/src/commands.ts';
-import { watchRepo } from './watcher.ts';
-import { observable } from '@trpc/server/observable';
+import type { GitCommand } from '../../frontend/src/commands.ts';
 
 export const appRouter = router({
-  graph: publicProcedure
-    .input(z.object({
-      repoPath: z.string()
-    }))
-    .query(async ({ input }) => {
-        const commits = await getRepositoryCommits(input.repoPath);
-        const graph = buildCommitGraph(commits);
-        return graph;
-    }),
-  stacks: publicProcedure
-    .input(z.object({
-      repoPath: z.string()
-    }))
-    .query(async ({ input }) => {
-        const commits = await getRepositoryCommits(input.repoPath);
-        const stackGraph = buildStackGraph(commits);
-        return stackGraph;
-    }),
-  layoutStacks: publicProcedure
-    .input(z.object({
-      repoPath: z.string()
-    }))
-    .query(async ({ input }) => {
-        const commits = await getRepositoryCommits(input.repoPath);
-        const stackGraph = buildStackGraph(commits);
-        const enhancedStackGraph = enhanceStackGraphForLayout(stackGraph);
-        return enhancedStackGraph;
-    }),
   fileChanges: publicProcedure
     .input(z.object({
       repoPath: z.string(),
@@ -330,7 +297,7 @@ export const appRouter = router({
 
         } else if (command.type === 'create-new-change') {
           // Create a new commit with the specified files
-          const target = parseCommandTarget(command.parent);
+          parseCommandTarget(command.parent);
 
           // For creating a new change, we need a source commit to split from
           // This is a limitation of the current implementation
@@ -374,26 +341,13 @@ export const appRouter = router({
     .input(z.object({
       repoPath: z.string()
     }))
-    .subscription(({ input }) => {
-      return observable<{ timestamp: number }>((emit) => {
+    .subscription(async function* ({ input }) {
         console.log(`🔔 Client subscribed to repo changes: ${input.repoPath}`);
-
-        // Send initial event
-        emit.next({ timestamp: Date.now() });
-
-        // Watch for file system changes
-        const unsubscribe = watchRepo(input.repoPath, () => {
-          console.log(`🔔 Emitting change event for ${input.repoPath}`);
-          emit.next({ timestamp: Date.now() });
-        });
-
-        // Return cleanup function
-        return () => {
-          console.log(`🔕 Client unsubscribed from repo changes: ${input.repoPath}`);
-          unsubscribe();
-        };
-      });
-    }),
+        for await (const repo of watchRepoChanges(input.repoPath)) {
+          yield repo;
+        }
+      
+    })
 });
 
 // Export type router type signature,

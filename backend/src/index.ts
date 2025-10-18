@@ -1,10 +1,7 @@
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import {
-  buildCommitGraph,
-  buildStackGraph,
   getRepositoryCommits
 } from './repo-parser.ts';
-import { enhanceStackGraphForLayout } from './layout-utils.ts';
 import { appRouter } from './routes.ts';
 import process from 'node:process';
 import { router } from './trpc.ts';
@@ -15,32 +12,9 @@ async function runCli() {
 
   try {
     switch (command) {
-      case 'graph':
-      case 'commits':
-        console.log('Fetching commit graph...');
-        const commits = await getRepositoryCommits();
-        const graph = buildCommitGraph(commits);
-        console.log(JSON.stringify(graph, null, 2));
-        break;
-      
-      case 'stacks':
-        console.log('Fetching stack graph...');
-        const stackCommits = await getRepositoryCommits();
-        const stackGraph = buildStackGraph(stackCommits);
-        console.log(JSON.stringify(stackGraph, null, 2));
-        break;
-      
-      case 'layout':
-        console.log('Fetching stack graph with layout information...');
-        const layoutCommits = await getRepositoryCommits();
-        const layoutStackGraph = buildStackGraph(layoutCommits);
-        const enhancedLayoutGraph = enhanceStackGraphForLayout(layoutStackGraph);
-        console.log(JSON.stringify(enhancedLayoutGraph, null, 2));
-        break;
-      
       case 'raw':
         console.log('Fetching raw commits...');
-        const rawCommits = await getRepositoryCommits();
+        const rawCommits = await getRepositoryCommits('.');
         console.log(JSON.stringify(rawCommits, null, 2));
         break;
       

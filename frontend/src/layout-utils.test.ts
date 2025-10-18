@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import { 
-  buildStackGraph,
   createCommitId,
   createChangeId, 
   createEmail, 
   createDescription, 
   type Commit 
-} from './repo-parser';
-import { detectParallelGroups, enhanceStackGraphForLayout } from './layout-utils';
+} from '../../backend/src/repo-parser';
+import { detectParallelGroups, enhanceStackGraphForLayout } from './layout-utils.ts';
+import { buildStackGraph } from './stackUtils.ts';
 
 describe('Layout Utils - Parallel Group Detection', () => {
   // Helper to create test commits

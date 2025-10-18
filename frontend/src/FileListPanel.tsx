@@ -18,7 +18,6 @@ function getSizeIndicator(additions?: number, deletions?: number) {
   }
   
   const total = additions + deletions;
-  const maxBars = 5;
   
   // Categorize size
   let bars = 1;
@@ -86,6 +85,7 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
         try {
           // Fetch the diff for this file using tRPC client
           const diff = await trpc.fileDiff.query({ 
+            repoPath,
             commitId: selectedCommitId, 
             filePath: fileChange.path 
           });

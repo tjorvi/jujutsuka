@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon src/index.ts",
     "start": "node src/index.ts",
+    "tsc": "tsc",
     "test": "vitest",
     "test:watch": "vitest --watch"
   },

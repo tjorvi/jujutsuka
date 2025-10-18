@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import { 
-  buildStackGraph, 
   createCommitId, 
   createChangeId,
   createEmail, 
   createDescription, 
   type Commit 
-} from './repo-parser';
+} from '../../backend/src/repo-parser';
+import { buildStackGraph } from './stackUtils.ts';
 
 describe('Stack Preprocessing', () => {
   // Helper to create test commits

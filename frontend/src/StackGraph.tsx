@@ -3,7 +3,7 @@ import type { CommitId, Commit } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { useDragDrop } from './useDragDrop';
-import { queries, useQuery } from './api';
+import { queries } from './api';
 import { useGraphStore } from './graphStore';
 
 interface StackComponentProps {

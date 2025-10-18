@@ -1,5 +1,7 @@
 import { $ } from 'execa';
 import { match } from 'ts-pattern';
+import { join } from 'node:path';
+import { watch } from 'node:fs/promises';
 
 // Helper function to execute jj commands
 async function executeJjCommand(repoPath: string, command: string, args: string[]): Promise<void> {
@@ -308,210 +310,6 @@ export async function getFileDiff(repoPath: string, commitId: CommitId, filePath
 }
 
 /**
- * Build a commit graph from the parsed commits
- */
-export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: Commit; children: CommitId[] }> {
-  const graph: Record<CommitId, { commit: Commit; children: CommitId[] }> = {};
-  
-  // Initialize all commits in the graph
-  for (const commit of commits) {
-    graph[commit.id] = { commit, children: [] };
-  }
-  
-  // Build parent-child relationships
-  for (const commit of commits) {
-    for (const parentId of commit.parents) {
-      const parent = graph[parentId];
-      if (parent) {
-        parent.children.push(commit.id);
-      }
-    }
-  }
-  
-  return graph;
-}
-
-// Branded string type for stack IDs
-declare const StackIdBrand: unique symbol;
-export type StackId = string & { readonly [StackIdBrand]: true };
-
-export function createStackId(value: string): StackId {
-  return value as StackId;
-}
-
-/**
- * Represents a linear sequence of commits (no branching/merging within the stack)
- */
-export interface Stack {
-  id: StackId;
-  commits: CommitId[];  // Ordered from oldest (bottom) to newest (top)
-  parentStacks: StackId[];  // Stacks that this stack depends on
-  childStacks: StackId[];   // Stacks that depend on this stack
-}
-
-/**
- * Information about connections between stacks
- */
-export interface StackConnection {
-  from: StackId;
-  to: StackId;
-  type: 'linear' | 'merge' | 'branch';
-}
-
-/**
- * Result of stack preprocessing
- */
-export interface StackGraph {
-  stacks: Record<StackId, Stack>;
-  connections: StackConnection[];
-  rootStacks: StackId[];  // Stacks with no parents
-  leafStacks: StackId[];  // Stacks with no children
-}
-
-/**
- * Preprocess commits into stacks (linear chains) and their connections
- */
-export function buildStackGraph(commits: Commit[]): StackGraph {
-  const graph = buildCommitGraph(commits);
-  const commitToStack = new Map<CommitId, StackId>();
-  const stacks: Record<StackId, Stack> = {};
-  const visited = new Set<CommitId>();
-  let stackCounter = 0;
-
-  // Helper to create a new stack ID
-  function nextStackId(): StackId {
-    return createStackId(`stack-${stackCounter++}`);
-  }
-
-  // Build linear chains by starting from each unvisited commit and walking forward
-  function buildLinearChain(startCommitId: CommitId): void {
-    if (visited.has(startCommitId)) return;
-
-    const stackId = nextStackId();
-    const chainCommits: CommitId[] = [];
-    let currentId = startCommitId;
-
-    // Walk forward through the linear chain
-    while (currentId && !visited.has(currentId)) {
-      const node = graph[currentId];
-      if (!node) break;
-
-      chainCommits.push(currentId);
-      visited.add(currentId);
-      commitToStack.set(currentId, stackId);
-
-      // Stop if this commit has multiple children (branch point)
-      if (node.children.length !== 1) {
-        break;
-      }
-
-      // Continue to the next commit if it has exactly one parent
-      // (even if the current commit is a merge, we continue forward if child has 1 parent)
-      const nextId = node.children[0];
-      const nextNode = graph[nextId];
-      if (!nextNode || nextNode.commit.parents.length !== 1) {
-        break;
-      }
-
-      currentId = nextId;
-    }
-
-    // Create the stack
-    stacks[stackId] = {
-      id: stackId,
-      commits: chainCommits,
-      parentStacks: [],
-      childStacks: [],
-    };
-  }
-
-  // Process all commits starting from roots
-  const allCommitIds = Object.keys(graph) as CommitId[];
-  
-  // Sort commits by timestamp to ensure consistent ordering
-  const sortedCommitIds = allCommitIds.sort((a, b) => 
-    graph[a].commit.timestamp.getTime() - graph[b].commit.timestamp.getTime()
-  );
-
-  // Build stacks starting from oldest commits
-  for (const commitId of sortedCommitIds) {
-    buildLinearChain(commitId);
-  }
-
-  // Now build connections between stacks
-  const connections: StackConnection[] = [];
-  const stackConnections = new Set<string>(); // To avoid duplicates
-
-  for (const stack of Object.values(stacks)) {
-    // Get the top (newest) commit of this stack
-    const topCommit = stack.commits[stack.commits.length - 1];
-    const { children } = graph[topCommit];
-
-    for (const childCommitId of children) {
-      const childStackId = commitToStack.get(childCommitId);
-      if (childStackId && childStackId !== stack.id) {
-        const connectionKey = `${stack.id}->${childStackId}`;
-        if (!stackConnections.has(connectionKey)) {
-          stackConnections.add(connectionKey);
-          
-          // Determine connection type
-          const childStack = stacks[childStackId];
-          const bottomChildCommit = childStack.commits[0];
-          const { commit: childCommit } = graph[bottomChildCommit];
-          
-          const connectionType: StackConnection['type'] = 
-            childCommit.parents.length > 1 ? 'merge' :
-            children.length > 1 ? 'branch' : 'linear';
-
-          connections.push({
-            from: stack.id,
-            to: childStackId,
-            type: connectionType,
-          });
-
-          // Update parent/child relationships
-          stack.childStacks.push(childStackId);
-          childStack.parentStacks.push(stack.id);
-        }
-      }
-    }
-  }
-
-  // Find root and leaf stacks
-  const rootStacks = Object.values(stacks)
-    .filter(stack => stack.parentStacks.length === 0)
-    .map(stack => stack.id);
-    
-  const leafStacks = Object.values(stacks)
-    .filter(stack => stack.childStacks.length === 0)
-    .map(stack => stack.id);
-
-  // Log stack graph structure
-  console.log('\n📊 Stack Graph:');
-  for (const [stackId, stack] of Object.entries(stacks)) {
-    const commitDescs = stack.commits.map(cid => {
-      const commit = graph[cid]?.commit;
-      return commit ? commit.description.substring(0, 40) : cid.substring(0, 8);
-    }).join(', ');
-    console.log(`  ${stackId}: [${stack.commits.length} commits] ${commitDescs}`);
-    if (stack.parentStacks.length > 0) {
-      console.log(`    ↑ from: ${stack.parentStacks.join(', ')}`);
-    }
-    if (stack.childStacks.length > 0) {
-      console.log(`    ↓ to: ${stack.childStacks.join(', ')}`);
-    }
-  }
-  console.log('');
-
-  return {
-    stacks,
-    connections,
-    rootStacks,
-    leafStacks,
-  };
-}
-
-/**
  * Command execution functions
  */
 
@@ -529,7 +327,7 @@ export async function executeRebase(repoPath: string, commitId: CommitId, target
       // Create new branch from specified commit
       await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', t.fromCommitId]);
     })
-    .with({ type: 'new-commit-between' }, async (t) => {
+    .with({ type: 'new-commit-between' }, async () => {
       // Rebase doesn't directly support "between" - this might need special handling
       throw new Error('Rebase to new-commit-between not supported');
     })
@@ -608,4 +406,30 @@ export async function executeSplit(
       console.log(`⚠️ new-branch split target needs proper implementation. fromCommitId: ${t.fromCommitId}`);
     })
     .exhaustive();
+}
+
+export async function currentOpId(repoPath: string) {
+  const { stdout } = await $({ cwd: repoPath })`jj op log -n1 --no-graph -T 'self.id()'`;
+  const opId = stdout.trim();
+  if (!opId) {
+    throw new Error('No current operation');
+  }
+  return opId;
+}
+
+export async function* watchRepoChanges(repoPath: string) {
+  const jjPath = join(repoPath, '.jj/repo/op_heads');
+
+  let lastOpHead = await currentOpId(repoPath);
+  const commits = await getRepositoryCommits(repoPath);
+  yield { commits, opHead: lastOpHead };
+  
+  for await (const _ of watch(jjPath, { recursive: true })) {
+    const currentOpHead = await currentOpId(repoPath);
+    if (currentOpHead !== lastOpHead) {
+      lastOpHead = currentOpHead || '';
+      const commits = await getRepositoryCommits(repoPath);
+      yield { commits, opHead: lastOpHead };
+    }
+  }
 }
