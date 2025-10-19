@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
-import { useDragDrop } from './useDragDrop';
 import { llmService } from './llmService';
 import { useGraphStore } from './graphStore';
+import { draggedFileChange } from './useDragDrop';
+import styles from './FileListPanel.module.css';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
@@ -53,11 +54,12 @@ function getSizeIndicator(additions?: number, deletions?: number) {
 }
 
 export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath }: FileListPanelProps) {
-  const { draggedFile, setDraggedFile, setDraggedFromCommit } = useDragDrop();
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [loadingSummaries, setLoadingSummaries] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [draggingFilePath, setDraggingFilePath] = useState<string | null>(null);
   const repoPath = useGraphStore(state => state.repoPath);
+  const commitGraph = useGraphStore(state => state.commitGraph);
 
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
@@ -71,6 +73,10 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
     { repoPath, commitId: selectedCommitId || '' },
     { enabled: !!repoPath && !!selectedCommitId }
   );
+
+  // Get the changeId for the selected commit
+  const selectedCommit = selectedCommitId && commitGraph ? commitGraph[selectedCommitId]?.commit : null;
+  const selectedChangeId = selectedCommit?.changeId;
 
   const handleSummarizeAll = async () => {
     if (!selectedCommitId || fileChanges.kind !== 'success') return;
@@ -201,45 +207,41 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
               No file changes
             </div>
           ) : (
-            fileChanges.data.map((fileChange, index) => (
-              <div 
+            fileChanges.data.map((fileChange, index) => {
+              if (!selectedCommitId || !selectedChangeId) return null;
+              return (
+              <div
                 key={index}
                 draggable={true}
+                className={styles.fileItem}
+                data-selected={selectedFilePath === fileChange.path ? 'true' : 'false'}
+                data-dragging={draggingFilePath === fileChange.path ? 'true' : 'false'}
                 onClick={() => onFileSelect?.(fileChange.path)}
                 onDragStart={(e) => {
-                  setDraggedFile(fileChange);
-                  setDraggedFromCommit(selectedCommitId!);
+                  setDraggingFilePath(fileChange.path);
                   e.dataTransfer.effectAllowed = 'move';
-                  e.dataTransfer.setData('application/json', JSON.stringify({ source: 'file-change', fileChange, fromCommit: selectedCommitId }));
+                  e.dataTransfer.setData('application/json', JSON.stringify({
+                    source: 'file-change',
+                    fileChange,
+                    fromChangeId: selectedChangeId,
+                    fromCommitId: selectedCommitId
+                  }));
                 }}
                 onDragEnd={() => {
-                  setDraggedFile(null);
-                  setDraggedFromCommit(null);
+                  setDraggingFilePath(null);
                 }}
-                style={{
-                  padding: '6px 10px',
-                  background: selectedFilePath === fileChange.path ? '#dbeafe' : 'white',
-                  borderRadius: '4px',
-                  border: selectedFilePath === fileChange.path ? '2px solid #3b82f6' : '1px solid #e5e7eb',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '12px',
-                  cursor: draggedFile ? 'grabbing' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  opacity: draggedFile?.path === fileChange.path ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!draggedFile) {
-                    e.currentTarget.style.borderColor = selectedFilePath === fileChange.path ? '#3b82f6' : '#9ca3af';
-                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+                onDragEnter={(e) => {
+                  const fc = draggedFileChange(e)
+                  if (fc) {
+                    e.currentTarget.classList.add('drag-over');
+                    e.currentTarget.classList.toggle('same-file', fc.fileChange.path === fileChange.path);
+                    e.currentTarget.dataset.dragKind = 'file-change';
                   }
                 }}
-                onMouseLeave={(e) => {
-                  if (!draggedFile) {
-                    e.currentTarget.style.borderColor = selectedFilePath === fileChange.path ? '#3b82f6' : '#e5e7eb';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('drag-over');
+                  e.currentTarget.classList.remove('same-file');
+                  delete e.currentTarget.dataset.dragKind;
                 }}
               >
                 <span style={{ fontSize: '14px' }}>
@@ -255,8 +257,8 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                 >
                   {fileChange.status}
                 </span>
-                <span 
-                  style={{ 
+                <span
+                  style={{
                     color: '#374151',
                     wordBreak: 'break-all',
                     fontSize: '11px',
@@ -268,7 +270,8 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                 </span>
                 {getSizeIndicator(fileChange.additions, fileChange.deletions)}
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

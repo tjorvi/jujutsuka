@@ -8,10 +8,13 @@ import { useState, useEffect } from 'react';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useGraphData } from './useGraphData';
 import { useGraphStore } from './graphStore';
+import { useDragState } from './useDragState';
 
 const REPO_DIR_KEY = 'jwarrior-repo-directory';
 
 function App() {
+  // Set up global drag state on document body
+  useDragState();
   const [repoDirectory, setRepoDirectory] = useState<string>(() => {
     return localStorage.getItem(REPO_DIR_KEY) || '';
   });

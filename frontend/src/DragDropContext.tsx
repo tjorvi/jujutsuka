@@ -1,71 +1,59 @@
-import { useState } from 'react';
-import type { CommitId, FileChange } from "../../backend/src/repo-parser";
-import { DragDropContext } from './useDragDrop';
+import type { CommitId } from "../../backend/src/repo-parser";
+import { DragDropContext, type FileChangeDragData, type ChangeDragData, type DropZonePosition } from './useDragDrop';
 import { useGraphStore } from './graphStore';
 
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
-  const [draggedFile, setDraggedFile] = useState<FileChange | null>(null);
-  const [draggedFromCommit, setDraggedFromCommit] = useState<CommitId | null>(null);
-  const [draggedCommit, setDraggedCommit] = useState<CommitId | null>(null);
-  
   const { executeRebase, executeSquash, executeSplit, executeMoveFiles } = useGraphStore();
 
-  const handleFileDrop = (targetCommitId: CommitId, insertType: 'before' | 'after' | 'branch' | 'existing' = 'before', beforeCommitId?: CommitId, afterCommitId?: CommitId) => {
-    if (!draggedFile || !draggedFromCommit) return;
-    
-    if (insertType === 'existing') {
-      // Move files to existing commit using squash
-      executeMoveFiles(draggedFromCommit, targetCommitId, [draggedFile]);
-    } else if (insertType === 'branch') {
+  const handleFileDrop = (position: DropZonePosition, dragData: FileChangeDragData) => {
+    const { fileChange, fromCommitId } = dragData;
+
+    if (position.kind === 'existing') {
+      // Move files to existing commit
+      executeMoveFiles(fromCommitId, position.commit, [fileChange]);
+    } else if (position.kind === 'new-branch') {
       // Split to new branch
-      executeSplit(draggedFromCommit, [draggedFile], {
+      executeSplit(fromCommitId, [fileChange], {
         type: 'new-branch',
-        fromCommitId: targetCommitId
+        fromCommitId: position.commit
       });
-    } else if (beforeCommitId && afterCommitId) {
+    } else if (position.kind === 'between') {
       // Split to new commit between two commits (using -B and -A)
-      executeSplit(draggedFromCommit, [draggedFile], {
+      executeSplit(fromCommitId, [fileChange], {
         type: 'new-commit-between',
-        beforeCommitId,
-        afterCommitId
+        beforeCommitId: position.beforeCommit,
+        afterCommitId: position.afterCommit
       });
-    } else {
-      // Split to new commit before/after target (fallback)
-      executeSplit(draggedFromCommit, [draggedFile], {
-        type: insertType === 'before' ? 'before' : 'after',
-        commitId: targetCommitId
+    } else if (position.kind === 'before') {
+      // Split to new commit before target
+      executeSplit(fromCommitId, [fileChange], {
+        type: 'before',
+        commitId: position.commit
+      });
+    } else if (position.kind === 'after') {
+      // Split to new commit after target
+      executeSplit(fromCommitId, [fileChange], {
+        type: 'after',
+        commitId: position.commit
       });
     }
-    
-    // Clear drag state
-    setDraggedFile(null);
-    setDraggedFromCommit(null);
   };
 
-  const handleCommitDrop = (targetCommitId: CommitId, action: 'rebase-before' | 'rebase-after' | 'squash') => {
-    if (!draggedCommit) return;
-    
+  const handleCommitDrop = (targetCommitId: CommitId, action: 'rebase-before' | 'rebase-after' | 'squash', dragData: ChangeDragData) => {
+    const { commitId: draggedCommitId } = dragData;
+
     if (action === 'squash') {
-      executeSquash(draggedCommit, targetCommitId);
+      executeSquash(draggedCommitId, targetCommitId);
     } else {
-      executeRebase(draggedCommit, {
+      executeRebase(draggedCommitId, {
         type: action === 'rebase-before' ? 'before' : 'after',
         commitId: targetCommitId
       });
     }
-    
-    // Clear drag state
-    setDraggedCommit(null);
   };
 
   return (
-    <DragDropContext.Provider value={{ 
-      draggedFile, 
-      setDraggedFile, 
-      draggedFromCommit, 
-      setDraggedFromCommit,
-      draggedCommit,
-      setDraggedCommit,
+    <DragDropContext.Provider value={{
       handleFileDrop,
       handleCommitDrop,
     }}>
