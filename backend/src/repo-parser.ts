@@ -2,10 +2,15 @@ import { $ } from 'execa';
 import { match } from 'ts-pattern';
 import { join } from 'node:path';
 import { watch } from 'node:fs/promises';
+import process from 'node:process';
 
 // Helper function to execute jj commands
 async function executeJjCommand(repoPath: string, command: string, args: string[]): Promise<void> {
-  await $({ cwd: repoPath })`jj ${[command, ...args]}`;
+  console.log(`🚀 Executing: jj ${[command, ...args].join(' ')} in ${repoPath}`);
+  const t = $({ cwd: repoPath })`jj ${[command, ...args]}`;
+  t.stdout.pipe(process.stdout);
+  t.stderr.pipe(process.stderr);
+  await t;
 }
 
 // Branded string types for type safety
@@ -340,7 +345,7 @@ export async function executeRebase(repoPath: string, commitId: CommitId, target
 
 export async function executeSquash(repoPath: string, sourceCommitId: CommitId, targetCommitId: CommitId): Promise<void> {
   // Squash source commit into target using --from and --into
-  await executeJjCommand(repoPath, 'squash', ['--from', sourceCommitId, '--into', targetCommitId]);
+  await executeJjCommand(repoPath, 'squash', ['-u', '--from', sourceCommitId, '--into', targetCommitId]);
 }
 
 export async function executeMoveFiles(
@@ -353,8 +358,9 @@ export async function executeMoveFiles(
 
   const filePaths = files.map(f => f.path);
 
+  
   // Use squash with specific file paths to move only those files
-  await executeJjCommand(repoPath, 'squash', ['--from', sourceCommitId, '--into', targetCommitId, '--', ...filePaths]);
+  await executeJjCommand(repoPath, 'squash', ['-u', '--from', sourceCommitId, '--into', targetCommitId, '--', ...filePaths]);
 }
 
 export async function executeSplit(
@@ -408,8 +414,13 @@ export async function executeSplit(
     .exhaustive();
 }
 
+export async function getDescription(repoPath: string, ref: string): Promise<Description> {
+  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${ref} --template description`;
+  return createDescription(stdout);
+}
+
 export async function currentOpId(repoPath: string) {
-  const { stdout } = await $({ cwd: repoPath })`jj op log -n1 --no-graph -T 'self.id()'`;
+  const { stdout } = await $({ cwd: repoPath })`jj op log -n1 --no-graph -T self.id()`;
   const opId = stdout.trim();
   if (!opId) {
     throw new Error('No current operation');
@@ -418,18 +429,22 @@ export async function currentOpId(repoPath: string) {
 }
 
 export async function* watchRepoChanges(repoPath: string) {
-  const jjPath = join(repoPath, '.jj/repo/op_heads');
+  const jjPath = join(repoPath, '.jj/repo/op_heads/');
 
   let lastOpHead = await currentOpId(repoPath);
   const commits = await getRepositoryCommits(repoPath);
   yield { commits, opHead: lastOpHead };
   
-  for await (const _ of watch(jjPath, { recursive: true })) {
+  for await (const { filename, eventType } of watch(jjPath, { recursive: true })) {
+    console.log(`🛎️ Detected ${eventType} on ${filename} in ${jjPath}`);
     const currentOpHead = await currentOpId(repoPath);
     if (currentOpHead !== lastOpHead) {
+      console.log(`🔄 Operation head changed from ${lastOpHead} to ${currentOpHead}`);
       lastOpHead = currentOpHead || '';
       const commits = await getRepositoryCommits(repoPath);
       yield { commits, opHead: lastOpHead };
+    } else {
+      console.log(`ℹ️ Operation head unchanged (${currentOpHead}), no update emitted`);
     }
   }
 }

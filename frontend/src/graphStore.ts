@@ -15,7 +15,6 @@ interface GraphState {
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
   setRepoPath: (repoPath: string) => void;
-  refreshGraphData: () => Promise<void>;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
   // Intention-based UI actions
@@ -66,7 +65,6 @@ export const useGraphStore = create<GraphState>()(
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Intention command executed successfully');
-          await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Intention command execution failed:', error);
         } finally {
@@ -156,7 +154,6 @@ export const useGraphStore = create<GraphState>()(
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Rebase command executed successfully');
-          await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Rebase command execution failed:', error);
         } finally {
@@ -179,7 +176,6 @@ export const useGraphStore = create<GraphState>()(
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Squash command executed successfully');
-          await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Squash command execution failed:', error);
         } finally {
@@ -202,7 +198,6 @@ export const useGraphStore = create<GraphState>()(
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Split command executed successfully');
-          await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Split command execution failed:', error);
         } finally {
@@ -225,7 +220,6 @@ export const useGraphStore = create<GraphState>()(
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Move files command executed successfully');
-          await get().refreshGraphData();
         } catch (error) {
           console.error('❌ Move files command execution failed:', error);
         } finally {

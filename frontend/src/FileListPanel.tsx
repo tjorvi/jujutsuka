@@ -210,7 +210,7 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   setDraggedFile(fileChange);
                   setDraggedFromCommit(selectedCommitId!);
                   e.dataTransfer.effectAllowed = 'move';
-                  e.dataTransfer.setData('text/plain', `${fileChange.path}:${fileChange.status}`);
+                  e.dataTransfer.setData('application/json', JSON.stringify({ source: 'file-change', fileChange, fromCommit: selectedCommitId }));
                 }}
                 onDragEnd={() => {
                   setDraggedFile(null);
