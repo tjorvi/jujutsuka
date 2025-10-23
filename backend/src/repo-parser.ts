@@ -7,7 +7,15 @@ import process from 'node:process';
 // Helper function to execute jj commands
 async function executeJjCommand(repoPath: string, command: string, args: string[]): Promise<void> {
   console.log(`🚀 Executing: jj ${[command, ...args].join(' ')} in ${repoPath}`);
-  const t = $({ cwd: repoPath })`jj ${[command, ...args]}`;
+  const env = {
+    ...process.env,
+    JJ_EDITOR: process.env.JJ_EDITOR ?? 'true',
+    JJ_UI: process.env.JJ_UI ?? 'text',
+    EDITOR: process.env.EDITOR ?? 'true',
+    VISUAL: process.env.VISUAL ?? process.env.EDITOR ?? 'true',
+    GIT_EDITOR: process.env.GIT_EDITOR ?? 'true',
+  };
+  const t = $({ cwd: repoPath, env })`jj ${[command, ...args]}`;
   t.stdout.pipe(process.stdout);
   t.stderr.pipe(process.stderr);
   await t;
