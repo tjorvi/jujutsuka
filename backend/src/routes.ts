@@ -80,6 +80,7 @@ export const appRouter = router({
           target: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -95,6 +96,7 @@ export const appRouter = router({
           newParent: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -110,6 +112,7 @@ export const appRouter = router({
           newPosition: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -142,6 +145,7 @@ export const appRouter = router({
           parent: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -159,6 +163,7 @@ export const appRouter = router({
           target: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -183,6 +188,7 @@ export const appRouter = router({
           target: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
             z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
             z.object({ 
               type: z.literal('new-commit-between'), 
@@ -214,6 +220,12 @@ export const appRouter = router({
           return {
             type: target.type,
             commitId: createCommitId(target.commitId)
+          };
+        } else if (target.type === 'between') {
+          return {
+            type: 'between',
+            beforeCommitId: createCommitId(target.beforeCommitId),
+            afterCommitId: createCommitId(target.afterCommitId)
           };
         } else if (target.type === 'new-branch') {
           return {

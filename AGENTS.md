@@ -9,3 +9,18 @@
 # UIs
 - During early stages don't put in a lot of code for fancy graphics. Keep it all very sterile.
 - Don't mix light backgrounds and light texts. Be consistent.
+
+# Coding style
+- Use strong typing
+  - Invalid states should be unrepresentable
+  - Use sum types and branded types
+- Prefer immutability
+- Prefer explicitness
+- Use mutable state in any form as little as possible
+
+## Favoured libraries
+- ts-pattern
+- zod
+- immer
+- execa
+- trpc

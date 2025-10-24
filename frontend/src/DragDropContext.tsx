@@ -4,6 +4,32 @@ import { useGraphStore } from './graphStore';
 
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
   const { executeRebase, executeSquash, executeSplit, executeMoveFiles } = useGraphStore();
+  const commitGraph = useGraphStore(state => state.commitGraph);
+
+  const isAncestor = (possibleAncestor: CommitId, commitId: CommitId): boolean => {
+    if (!commitGraph) return false;
+    if (possibleAncestor === commitId) return false;
+
+    const visited = new Set<CommitId>();
+    const stack: CommitId[] = [...(commitGraph[commitId]?.commit.parents ?? [])];
+
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (current === possibleAncestor) {
+        return true;
+      }
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const parents = commitGraph[current]?.commit.parents ?? [];
+      for (const parent of parents) {
+        if (!visited.has(parent)) {
+          stack.push(parent);
+        }
+      }
+    }
+
+    return false;
+  };
 
   const handleFileDrop = (position: DropZonePosition, dragData: FileChangeDragData) => {
     const { fileChange, fromCommitId } = dragData;
@@ -39,15 +65,72 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleCommitDrop = (targetCommitId: CommitId, action: 'rebase-before' | 'rebase-after' | 'squash', dragData: ChangeDragData) => {
+  const handleCommitDrop = (position: DropZonePosition, dragData: ChangeDragData, options?: { mode?: 'rebase' | 'squash' }) => {
     const { commitId: draggedCommitId } = dragData;
+    const mode = options?.mode ?? 'rebase';
 
-    if (action === 'squash') {
-      executeSquash(draggedCommitId, targetCommitId);
-    } else {
+    if (mode === 'squash') {
+      if (position.kind !== 'existing') {
+        throw new Error(`Squash requires an existing commit target, got ${position.kind}`);
+      }
+      executeSquash(draggedCommitId, position.commit);
+      return;
+    }
+
+    if (position.kind === 'before' || position.kind === 'after') {
       executeRebase(draggedCommitId, {
-        type: action === 'rebase-before' ? 'before' : 'after',
-        commitId: targetCommitId
+        type: position.kind,
+        commitId: position.commit
+      });
+    } else if (position.kind === 'between') {
+      const { beforeCommit, afterCommit } = position;
+
+      if (isAncestor(beforeCommit, draggedCommitId)) {
+        executeRebase(draggedCommitId, {
+          type: 'before',
+          commitId: beforeCommit,
+        });
+        return;
+      }
+
+      if (isAncestor(afterCommit, draggedCommitId)) {
+        executeRebase(draggedCommitId, {
+          type: 'after',
+          commitId: afterCommit,
+        });
+        return;
+      }
+
+      if (isAncestor(draggedCommitId, beforeCommit)) {
+        executeRebase(draggedCommitId, {
+          type: 'after',
+          commitId: beforeCommit,
+        });
+        return;
+      }
+
+      if (isAncestor(draggedCommitId, afterCommit)) {
+        executeRebase(draggedCommitId, {
+          type: 'before',
+          commitId: afterCommit,
+        });
+        return;
+      }
+
+      executeRebase(draggedCommitId, {
+        type: 'between',
+        beforeCommitId: beforeCommit,
+        afterCommitId: afterCommit,
+      });
+    } else if (position.kind === 'new-branch') {
+      executeRebase(draggedCommitId, {
+        type: 'new-branch',
+        fromCommitId: position.commit,
+      });
+    } else if (position.kind === 'existing') {
+      executeRebase(draggedCommitId, {
+        type: 'existing-commit',
+        commitId: position.commit,
       });
     }
   };

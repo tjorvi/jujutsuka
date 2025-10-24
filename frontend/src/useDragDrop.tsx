@@ -65,11 +65,13 @@ export type DropZonePosition = {
 | { kind: 'new-branch', commit: CommitId }
 | { kind: 'existing', commit: CommitId };
 
+type CommitDropMode = 'rebase' | 'squash';
+
 interface DragDropContextType {
 
   // Domain command actions
   handleFileDrop: (position: DropZonePosition, dragData: FileChangeDragData) => void;
-  handleCommitDrop: (targetCommitId: CommitId, action: 'rebase-before' | 'rebase-after' | 'squash', dragData: ChangeDragData) => void;
+  handleCommitDrop: (position: DropZonePosition, dragData: ChangeDragData, options?: { mode?: CommitDropMode }) => void;
 }
 
 export const DragDropContext = createContext<DragDropContextType | null>(null);

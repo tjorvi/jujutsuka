@@ -77,8 +77,6 @@ function DropZone({ position, children }: DropZoneProps) {
     dropMetadata['data-after-commit'] = position.afterCommit;
   } else if (position.kind === 'before' || position.kind === 'after' || position.kind === 'existing') {
     dropMetadata['data-commit'] = position.commit;
-  } else if (position.kind === 'new-branch') {
-    dropMetadata['data-from-commit'] = position.commit;
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -91,17 +89,7 @@ function DropZone({ position, children }: DropZoneProps) {
     if (fc) {
       handleFileDrop(position, fc);
     } else if (cc) {
-      if (position.kind === 'new-branch') {
-        handleCommitDrop(position.commit, 'rebase-after', cc);
-      } else if (position.kind === 'before') {
-        handleCommitDrop(position.commit, 'rebase-before', cc);
-      } else if (position.kind === 'after') {
-        handleCommitDrop(position.commit, 'rebase-after', cc);
-      } else if (position.kind === 'between') {
-        // Insert the dragged change after the commit above this drop zone
-        handleCommitDrop(position.beforeCommit, 'rebase-after', cc);
-      }
-      // Note: 'existing' is not valid for commit drops
+      handleCommitDrop(position, cc);
     }
   };
 
@@ -173,7 +161,7 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
     if (fc) {
       handleFileDrop({ kind: 'new-branch', commit: commitId }, fc);
     } else if (cc) {
-      handleCommitDrop(commitId, 'rebase-after', cc);
+      handleCommitDrop({ kind: 'new-branch', commit: commitId }, cc);
     }
   };
 
@@ -328,7 +316,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   if (fc) {
                     handleFileDrop({ kind: 'existing', commit: commitId }, fc);
                   } else if (cc) {
-                    handleCommitDrop(commitId, 'squash', cc);
+                    handleCommitDrop({ kind: 'existing', commit: commitId }, cc, { mode: 'squash' });
                   }
                 } : undefined}
                 onDragOver={!isSelected ? (e: React.DragEvent) => {

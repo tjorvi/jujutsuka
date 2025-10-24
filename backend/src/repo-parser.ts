@@ -178,6 +178,10 @@ export type CommandTarget = {
   type: 'before' | 'after';
   commitId: CommitId;
 } | {
+  type: 'between';
+  beforeCommitId: CommitId;
+  afterCommitId: CommitId;
+} | {
   type: 'new-branch';
   fromCommitId: CommitId;
 } | {
@@ -345,6 +349,17 @@ export async function executeRebase(repoPath: string, commitId: CommitId, target
       // Move commit after target
       await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--insert-after', t.commitId]);
     })
+    .with({ type: 'between' }, async (t) => {
+      // Reorder commit between two neighbors
+      await executeJjCommand(repoPath, 'rebase', [
+        '-r',
+        commitId,
+        '--insert-after',
+        t.beforeCommitId,
+        '--insert-before',
+        t.afterCommitId,
+      ]);
+    })
     .with({ type: 'new-branch' }, async (t) => {
       // Create new branch from specified commit
       await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', t.fromCommitId]);
@@ -419,6 +434,9 @@ export async function executeSplit(
     .with({ type: 'existing-commit' }, async (t) => {
       // Split files into an existing commit (use destination)
       await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '-d', t.commitId, '--', ...filePaths]);
+    })
+    .with({ type: 'between' }, async () => {
+      throw new Error('Split with between target is not supported');
     })
     .with({ type: 'new-branch' }, async (t) => {
       // Create new branch and split files there
