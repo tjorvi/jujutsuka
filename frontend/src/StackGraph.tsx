@@ -6,12 +6,14 @@ import { draggedFileChange, draggedChange, dragChange, useDragDrop, type DropZon
 import { queries } from './api';
 import { useGraphStore } from './graphStore';
 import styles from './StackGraph.module.css';
+import type { CommandTarget } from './commands';
 
 interface StackComponentProps {
   stack: Stack;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
   isInParallelGroup?: boolean;
   selectedCommitId?: CommitId;
+  currentCommitId?: CommitId;
   onCommitSelect: (commitId: CommitId) => void;
 }
 
@@ -64,9 +66,35 @@ interface DropZoneProps {
   children?: React.ReactNode;
 }
 
+function commandTargetFromPosition(position: DropZonePosition): CommandTarget | null {
+  switch (position.kind) {
+    case 'before':
+      return { type: 'before', commitId: position.commit };
+    case 'after':
+      return { type: 'after', commitId: position.commit };
+    case 'between':
+      return {
+        type: 'between',
+        beforeCommitId: position.beforeCommit,
+        afterCommitId: position.afterCommit,
+      };
+    case 'new-branch':
+      return { type: 'new-branch', fromCommitId: position.commit };
+    default:
+      return null;
+  }
+}
+
 function DropZone({ position, children }: DropZoneProps) {
   const { handleFileDrop, handleCommitDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
+  const createNewChange = useGraphStore(state => state.createNewChange);
+  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
+  const commandTarget = commandTargetFromPosition(position);
+  const dropLabel = position.kind === 'between'
+    ? 'between these changes'
+    : `${position.kind} this change`;
+  const dropTitle = `Drop to move ${dropLabel}`;
 
   const dropMetadata: Record<string, string> = {
     'data-drop-kind': position.kind,
@@ -111,32 +139,50 @@ function DropZone({ position, children }: DropZoneProps) {
     }
   };
 
+  const handleCreateEmptyChange = () => {
+    if (!commandTarget) {
+      return;
+    }
+    void createNewChange([], commandTarget);
+  };
+
+  const dropZoneLine = (
+    <div className={styles.dropZoneWrapper}>
+      <div
+        className={styles.dropZoneLinear}
+        {...dropMetadata}
+        data-over={isOver ? 'true' : 'false'}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        title={dropTitle}
+      />
+      {commandTarget && (
+        <button
+          type="button"
+          className={styles.dropZoneAction}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            handleCreateEmptyChange();
+          }}
+          disabled={isExecutingCommand}
+        >
+          New change
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <>
       {position.kind === 'before' && (
-        <div
-          className={styles.dropZoneLinear}
-          {...dropMetadata}
-          data-over={isOver ? 'true' : 'false'}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          title={`Drop to move ${position.kind} this change`}
-        />
+        dropZoneLine
       )}
       {children}
       {(position.kind === 'after' || position.kind === 'between') && (
-        <div
-          className={styles.dropZoneLinear}
-          {...dropMetadata}
-          data-over={isOver ? 'true' : 'false'}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          title={`Drop to move ${position.kind} this change`}
-        />
+        dropZoneLine
       )}
     </>
   );
@@ -145,6 +191,8 @@ function DropZone({ position, children }: DropZoneProps) {
 function BranchDropZone({ commitId }: { commitId: CommitId }) {
   const { handleFileDrop, handleCommitDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
+  const createNewChange = useGraphStore(state => state.createNewChange);
+  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
 
   const metadata: Record<string, string> = {
     'data-drop-kind': 'new-branch',
@@ -181,6 +229,13 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
     }
   };
 
+  const handleCreateEmptyBranch = () => {
+    if (isExecutingCommand) {
+      return;
+    }
+    void createNewChange([], { type: 'new-branch', fromCommitId: commitId });
+  };
+
   return (
     <div
       className={styles.dropZoneBranch}
@@ -190,20 +245,28 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
-      title="Drop to split into a new branch"
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        handleCreateEmptyBranch();
+      }}
+      title="Drop to split into a new branch. Click to create an empty change here."
     >
       🌿
     </div>
   );
 }
 
-function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, onCommitSelect }: StackComponentProps) {
+function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, currentCommitId, onCommitSelect }: StackComponentProps) {
   const { handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
   const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const repoPath = useGraphStore(state => state.repoPath);
+  const abandonChange = useGraphStore(state => state.abandonChange);
+  const checkoutChange = useGraphStore(state => state.checkoutChange);
+  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
   // Fetch stats for all commits in the stack
@@ -266,12 +329,33 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         if (!commit) return null;
 
         const isSelected = selectedCommitId === commitId;
+        const isCurrent = currentCommitId === commitId;
         const isDragTarget = isDraggingFile && !draggedCommitId; // Only true when dragging file, not commit
         const isHovered = hoveredCommitId === commitId;
         const isBeingDragged = draggedCommitId === commitId;
         const isCommitDropTarget = draggedCommitId && draggedCommitId !== commitId;
         const hasConflicts = commit.hasConflicts;
         const nextCommitId = commitsInDisplayOrder[index + 1];
+        const stats = commitStats[commitId];
+        const sizeIndicator = stats ? (() => {
+          const { additions, deletions } = stats;
+          const indicator = getCommitSizeIndicator(additions, deletions);
+          return indicator.label ? (
+            <div
+              style={{
+                fontSize: '9px',
+                fontWeight: 'bold',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                background: indicator.color,
+                color: 'white',
+              }}
+              title={indicator.tooltip}
+            >
+              {indicator.label}
+            </div>
+          ) : null;
+        })() : null;
 
         return (
           <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -282,6 +366,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 data-drop-kind="commit"
                 data-commit={commitId}
                 data-selected={isSelected ? 'true' : 'false'}
+                data-current={isCurrent ? 'true' : 'false'}
                 data-being-dragged={isBeingDragged ? 'true' : 'false'}
                 data-hovered={(isHovered && !isSelected) ? 'true' : 'false'}
                 data-commit-dragging={(draggedCommitId !== null && draggedCommitId !== commitId) ? 'true' : 'false'}
@@ -346,6 +431,22 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                       <div style={{ fontWeight: '600', color: '#374151' }}>
                         change: {commit.changeId.slice(0, 8)}
                       </div>
+                      {isCurrent && (
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#047857',
+                            border: '1px solid #34d399',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            background: '#d1fae5',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          current
+                        </span>
+                      )}
                       {hasConflicts && (
                         <span
                           style={{
@@ -363,25 +464,11 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                         </span>
                       )}
                     </div>
-                    {commitStats[commitId] && (() => {
-                      const { additions, deletions } = commitStats[commitId];
-                      const indicator = getCommitSizeIndicator(additions, deletions);
-                      return indicator.label ? (
-                        <div
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 'bold',
-                            padding: '1px 5px',
-                            borderRadius: '3px',
-                            background: indicator.color,
-                            color: 'white',
-                          }}
-                          title={indicator.tooltip}
-                        >
-                          {indicator.label}
-                        </div>
-                      ) : null;
-                    })()}
+                    {sizeIndicator && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {sizeIndicator}
+                      </div>
+                    )}
                   </div>
                   <div style={{ fontSize: '9px', color: '#9ca3af' }}>
                     commit: {commitId.slice(0, 8)}
@@ -399,6 +486,33 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 </div>
                 <div style={{ fontSize: '11px', color: '#6b7280' }}>
                   {commit.author.name} • {commit.timestamp.toLocaleDateString()}
+                </div>
+                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className={styles.commitPrimaryActionButton}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      void checkoutChange(commitId);
+                    }}
+                    disabled={isExecutingCommand || isCurrent}
+                    title={isCurrent ? 'This change is already checked out' : 'Check out this change into the workspace'}
+                  >
+                    {isCurrent ? 'Checked out' : 'Check out'}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.commitActionButton}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      void abandonChange(commitId);
+                    }}
+                    disabled={isExecutingCommand}
+                  >
+                    Abandon
+                  </button>
                 </div>
               </div>
               <BranchDropZone commitId={commitId} />
@@ -514,11 +628,13 @@ export function StackGraphComponent({
   stackGraph,
   commitGraph,
   selectedCommitId,
+  currentCommitId,
   onCommitSelect
 }: {
   stackGraph: LayoutStackGraph;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
   selectedCommitId?: CommitId;
+  currentCommitId?: CommitId;
   onCommitSelect: (commitId: CommitId) => void;
 }) {
   // Log when commit graph changes to track optimistic updates
@@ -686,6 +802,7 @@ export function StackGraphComponent({
                         commitGraph={commitGraph}
                         isInParallelGroup={item.isParallel}
                         selectedCommitId={selectedCommitId}
+                        currentCommitId={currentCommitId}
                         onCommitSelect={handleCommitSelect}
                       />
                     </div>

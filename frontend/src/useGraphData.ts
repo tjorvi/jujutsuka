@@ -72,22 +72,24 @@ export interface StackGraph {
 export function useGraphData() {
   const repoPath = useGraphStore(state => state.repoPath);
   const setCommitGraph = useGraphStore(state => state.setCommitGraph);
+  const setCurrentCommitId = useGraphStore(state => state.setCurrentCommitId);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
 
   const commitsSubscription = useSubscription(subscriptions.watchRepoChanges, { repoPath });
 
-  const onNewGraph = useEffectEvent((commits: Commit[]) => {
+  const onNewGraph = useEffectEvent((payload: { commits: Commit[]; currentCommitId: CommitId | null }) => {
     console.log('📊 Syncing query data to store');
-    const builtGraph = buildCommitGraph(commits);
+    const builtGraph = buildCommitGraph(payload.commits);
     setCommitGraph(builtGraph);
+    setCurrentCommitId(payload.currentCommitId);
   });
 
   useEffect(() => {
     if (commitsSubscription.kind === 'success') {
       const repo = commitsSubscription.data;
       console.log(`📥 Received ${repo.commits.length} commits from subscription, op head ${repo.opHead}`);
-      onNewGraph(repo.commits);
+      onNewGraph({ commits: repo.commits, currentCommitId: repo.currentCommitId });
     }
   }, [commitsSubscription]); // eslint is confused here, according to the docs useEffectEvent shouldn't be listed
 

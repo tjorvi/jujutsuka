@@ -27,6 +27,7 @@ describe('Layout Utils - Parallel Group Detection', () => {
       },
       timestamp,
       parents: parents.map(p => createCommitId(p.padEnd(40, '0'))),
+      hasConflicts: false,
     };
   }
 

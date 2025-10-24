@@ -18,14 +18,14 @@
   align-items: center;
   justify-content: center;
   font-size: 20px;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.6;
+  pointer-events: auto;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
 body[data-dragging="true"] .dropZoneBranch {
-  opacity: 0.7;
-  pointer-events: auto;
+  opacity: 0.9;
 }
 
 body[data-dragging="true"] .dropZoneBranch[data-over="true"] {
@@ -33,14 +33,18 @@ body[data-dragging="true"] .dropZoneBranch[data-over="true"] {
   background: #10b981;
 }
 
+.dropZoneBranch:hover {
+  background: #d1fae5;
+  border-color: #34d399;
+}
+
 /* Linear drop zones - horizontal bars */
 .dropZoneLinear {
-  width: 100%;
+  flex: 1;
   height: 8px;
   background: #e5e7eb;
   border-radius: 2px;
   border: 1px dashed #9ca3af;
-  margin: 4px 0;
   opacity: 0;
   pointer-events: none;
   transition: all 0.2s ease;
@@ -55,6 +59,37 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   opacity: 1;
   background: #10b981;
   border: 2px dashed #059669;
+}
+
+.dropZoneWrapper {
+  position: relative;
+  width: 100%;
+  height: 20px;
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dropZoneAction {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dropZoneAction:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.dropZoneAction:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Commit Card Styles */
@@ -130,6 +165,58 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   border-left: 3px solid #b91c1c;
   border-color: #fca5a5;
   background: #fef2f2;
+}
+
+.commitCard[data-current="true"]:not([data-selected="true"]):not([data-conflict="true"]) {
+  border-left: 3px solid #047857;
+  border-color: #34d399;
+  background: #ecfdf5;
+}
+
+.commitCard[data-current="true"][data-selected="true"] {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+}
+
+.commitActionButton {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  border: 1px solid #ef4444;
+  background: #fee2e2;
+  color: #b91c1c;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.commitActionButton:hover {
+  background: #fecaca;
+  border-color: #dc2626;
+}
+
+.commitActionButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.commitPrimaryActionButton {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  border: 1px solid #3b82f6;
+  background: #dbeafe;
+  color: #1d4ed8;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.commitPrimaryActionButton:hover {
+  background: #bfdbfe;
+  border-color: #2563eb;
+}
+
+.commitPrimaryActionButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Stack container */

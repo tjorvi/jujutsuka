@@ -9,11 +9,13 @@ type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
 interface GraphState {
   // Data
   commitGraph: CommitGraph | null;
+  currentCommitId: CommitId | null;
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
 
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
+  setCurrentCommitId: (commitId: CommitId | null) => void;
   setRepoPath: (repoPath: string) => void;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
@@ -26,6 +28,8 @@ interface GraphState {
   splitAtEvoLog: (changeId: CommitId, evoLogIndex: number, files?: FileChange[]) => Promise<void>;
   createNewChange: (files: FileChange[], parent: CommandTarget) => Promise<void>;
   updateChangeDescription: (commitId: CommitId, description: string) => Promise<void>;
+  abandonChange: (commitId: CommitId) => Promise<void>;
+  checkoutChange: (commitId: CommitId) => Promise<void>;
 
   // Legacy actions (for backwards compatibility)
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
@@ -39,12 +43,17 @@ export const useGraphStore = create<GraphState>()(
     (set, get) => ({
       // Initial state
       commitGraph: null,
+      currentCommitId: null,
       isExecutingCommand: false,
       repoPath: '',
 
       // Set fresh data from the server
       setCommitGraph: (commitGraph) => {
         set({ commitGraph });
+      },
+
+      setCurrentCommitId: (commitId) => {
+        set({ currentCommitId: commitId });
       },
 
       // Set repository path
@@ -145,6 +154,22 @@ export const useGraphStore = create<GraphState>()(
           type: 'update-change-description',
           commitId,
           description,
+        };
+        await get().executeCommand(command);
+      },
+
+      abandonChange: async (commitId) => {
+        const command: IntentionCommand = {
+          type: 'abandon-change',
+          commitId,
+        };
+        await get().executeCommand(command);
+      },
+
+      checkoutChange: async (commitId) => {
+        const command: IntentionCommand = {
+          type: 'checkout-change',
+          commitId,
         };
         await get().executeCommand(command);
       },

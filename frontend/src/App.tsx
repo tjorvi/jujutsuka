@@ -32,6 +32,7 @@ function App() {
   const [selectedCommitId, setSelectedCommitId] = useState<CommitId | undefined>();
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
   const [showSettings, setShowSettings] = useState(false);
+  const currentCommitId = useGraphStore(state => state.currentCommitId);
 
   // Save directory to localStorage and sync to store whenever it changes
   useEffect(() => {
@@ -46,6 +47,11 @@ function App() {
     setSelectedCommitId(commitId);
     setSelectedFilePath(undefined);
   };
+
+  useEffect(() => {
+    if (!currentCommitId) return;
+    setSelectedCommitId(prev => prev ?? currentCommitId);
+  }, [currentCommitId]);
 
   return (
     <DragDropProvider>
@@ -119,6 +125,7 @@ function App() {
               stackGraph={stackGraph} 
               commitGraph={commitGraph}
               selectedCommitId={selectedCommitId}
+              currentCommitId={currentCommitId ?? undefined}
               onCommitSelect={handleCommitSelect}
             />
           )}

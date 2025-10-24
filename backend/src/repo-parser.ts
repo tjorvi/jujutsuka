@@ -164,6 +164,20 @@ export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> 
 }
 
 /**
+ * Determine the commit that is currently checked out in the workspace.
+ */
+export async function getCurrentCommitId(repoPath: string): Promise<CommitId | null> {
+  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r @ --template commit_id`;
+  const commitId = stdout.trim();
+
+  if (commitId === '' || commitId === '0000000000000000000000000000000000000000') {
+    return null;
+  }
+
+  return createCommitId(commitId);
+}
+
+/**
  * File change information for a commit
  */
 export interface FileChange {
@@ -375,6 +389,44 @@ export async function executeRebase(repoPath: string, commitId: CommitId, target
     .exhaustive();
 }
 
+export async function executeAbandon(repoPath: string, commitId: CommitId): Promise<void> {
+  await executeJjCommand(repoPath, 'abandon', ['-r', commitId]);
+}
+
+export async function executeCreateEmptyChange(repoPath: string, target: CommandTarget): Promise<void> {
+  await match(target)
+    .with({ type: 'before' }, async (t) => {
+      await executeJjCommand(repoPath, 'new', ['--insert-before', t.commitId]);
+    })
+    .with({ type: 'after' }, async (t) => {
+      await executeJjCommand(repoPath, 'new', ['--insert-after', t.commitId]);
+    })
+    .with({ type: 'between' }, async (t) => {
+      await executeJjCommand(repoPath, 'new', [
+        '--insert-after',
+        t.afterCommitId,
+        '--insert-before',
+        t.beforeCommitId,
+      ]);
+    })
+    .with({ type: 'new-commit-between' }, async (t) => {
+      await executeJjCommand(repoPath, 'new', [
+        '--insert-after',
+        t.afterCommitId,
+        '--insert-before',
+        t.beforeCommitId,
+      ]);
+    })
+    .with({ type: 'new-branch' }, async (t) => {
+      // Creating a new branch should fork from the target without rebasing children.
+      await executeJjCommand(repoPath, 'new', [t.fromCommitId]);
+    })
+    .with({ type: 'existing-commit' }, () => {
+      throw new Error('Cannot create a new empty change inside an existing commit');
+    })
+    .exhaustive();
+}
+
 export async function executeSquash(repoPath: string, sourceCommitId: CommitId, targetCommitId: CommitId): Promise<void> {
   // Squash source commit into target using --from and --into
   await executeJjCommand(repoPath, 'squash', ['-u', '--from', sourceCommitId, '--into', targetCommitId]);
@@ -458,6 +510,13 @@ export async function executeUpdateDescription(
   await executeJjCommand(repoPath, 'describe', ['-r', commitId, '-m', description]);
 }
 
+export async function executeCheckout(
+  repoPath: string,
+  commitId: CommitId
+): Promise<void> {
+  await executeJjCommand(repoPath, 'edit', ['-r', commitId]);
+}
+
 export async function getDescription(repoPath: string, ref: string): Promise<Description> {
   const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${ref} --template description`;
   return createDescription(stdout);
@@ -477,8 +536,9 @@ export async function* watchRepoChanges(repoPath: string) {
 
   let lastOpHead = await currentOpId(repoPath);
   const commits = await getRepositoryCommits(repoPath);
+  const currentCommitId = await getCurrentCommitId(repoPath);
   console.log(`📦 watchRepoChanges initial emit: ${commits.length} commits`);
-  yield { commits, opHead: lastOpHead };
+  yield { commits, opHead: lastOpHead, currentCommitId };
   
   for await (const { filename, eventType } of watch(jjPath, { recursive: true })) {
     console.log(`🛎️ Detected ${eventType} on ${filename} in ${jjPath}`);
@@ -487,8 +547,9 @@ export async function* watchRepoChanges(repoPath: string) {
       console.log(`🔄 Operation head changed from ${lastOpHead} to ${currentOpHead}`);
       lastOpHead = currentOpHead || '';
       const commits = await getRepositoryCommits(repoPath);
+      const currentCommitId = await getCurrentCommitId(repoPath);
       console.log(`📦 watchRepoChanges change emit: ${commits.length} commits`);
-      yield { commits, opHead: lastOpHead };
+      yield { commits, opHead: lastOpHead, currentCommitId };
     } else {
       console.log(`ℹ️ Operation head unchanged (${currentOpHead}), no update emitted`);
     }

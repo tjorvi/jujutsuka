@@ -10,7 +10,10 @@ import {
   executeSplit,
   executeMoveFiles,
   executeUpdateDescription,
-  watchRepoChanges
+  executeAbandon,
+  executeCreateEmptyChange,
+  watchRepoChanges,
+  executeCheckout
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
@@ -157,9 +160,17 @@ export const appRouter = router({
           ])
         }),
         z.object({
+          type: z.literal('abandon-change'),
+          commitId: z.string()
+        }),
+        z.object({
           type: z.literal('update-change-description'),
           commitId: z.string(),
           description: z.string()
+        }),
+        z.object({
+          type: z.literal('checkout-change'),
+          commitId: z.string()
         }),
         
         // Legacy commands (for backwards compatibility)
@@ -317,13 +328,23 @@ export const appRouter = router({
           const commitId = createCommitId(command.commitId);
           await executeUpdateDescription(repoPath, commitId, command.description);
 
+        } else if (command.type === 'checkout-change') {
+          const commitId = createCommitId(command.commitId);
+          await executeCheckout(repoPath, commitId);
+
         } else if (command.type === 'create-new-change') {
           // Create a new commit with the specified files
-          parseCommandTarget(command.parent);
+          const target = parseCommandTarget(command.parent);
 
-          // For creating a new change, we need a source commit to split from
-          // This is a limitation of the current implementation
-          throw new Error('Create new change not yet implemented - requires source commit selection');
+          if (command.files.length > 0) {
+            throw new Error('Creating a new change with predefined files is not yet supported');
+          }
+
+          await executeCreateEmptyChange(repoPath, target);
+
+        } else if (command.type === 'abandon-change') {
+          const commitId = createCommitId(command.commitId);
+          await executeAbandon(repoPath, commitId);
 
         } else if (command.type === 'rebase') {
           const commitId = createCommitId(command.commitId);

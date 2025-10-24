@@ -60,6 +60,16 @@ export interface UpdateChangeDescriptionCommand {
   description: string;
 }
 
+export interface AbandonChangeCommand {
+  type: 'abandon-change';
+  commitId: CommitId;
+}
+
+export interface CheckoutChangeCommand {
+  type: 'checkout-change';
+  commitId: CommitId;
+}
+
 export type IntentionCommand = 
   | MoveFileToChangeCommand
   | SplitFileFromChangeCommand
@@ -68,7 +78,9 @@ export type IntentionCommand =
   | SquashChangeIntoCommand
   | SplitAtEvoLogCommand
   | CreateNewChangeCommand
-  | UpdateChangeDescriptionCommand;
+  | UpdateChangeDescriptionCommand
+  | AbandonChangeCommand
+  | CheckoutChangeCommand;
 
 // Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {
