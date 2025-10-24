@@ -68,6 +68,19 @@ function DropZone({ position, children }: DropZoneProps) {
   const { handleFileDrop, handleCommitDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
 
+  const dropMetadata: Record<string, string> = {
+    'data-drop-kind': position.kind,
+  };
+
+  if (position.kind === 'between') {
+    dropMetadata['data-before-commit'] = position.beforeCommit;
+    dropMetadata['data-after-commit'] = position.afterCommit;
+  } else if (position.kind === 'before' || position.kind === 'after' || position.kind === 'existing') {
+    dropMetadata['data-commit'] = position.commit;
+  } else if (position.kind === 'new-branch') {
+    dropMetadata['data-from-commit'] = position.commit;
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsOver(false);
@@ -85,8 +98,8 @@ function DropZone({ position, children }: DropZoneProps) {
       } else if (position.kind === 'after') {
         handleCommitDrop(position.commit, 'rebase-after', cc);
       } else if (position.kind === 'between') {
-        // Insert the dragged change before the commit that sits below this drop zone
-        handleCommitDrop(position.afterCommit, 'rebase-before', cc);
+        // Insert the dragged change after the commit above this drop zone
+        handleCommitDrop(position.beforeCommit, 'rebase-after', cc);
       }
       // Note: 'existing' is not valid for commit drops
     }
@@ -116,6 +129,7 @@ function DropZone({ position, children }: DropZoneProps) {
         {children}
         <div
           className={styles.dropZoneBranch}
+          {...dropMetadata}
           data-over={isOver ? 'true' : 'false'}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -134,6 +148,7 @@ function DropZone({ position, children }: DropZoneProps) {
       {position.kind === 'before' && (
         <div
           className={styles.dropZoneLinear}
+          {...dropMetadata}
           data-over={isOver ? 'true' : 'false'}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -146,6 +161,7 @@ function DropZone({ position, children }: DropZoneProps) {
       {(position.kind === 'after' || position.kind === 'between') && (
         <div
           className={styles.dropZoneLinear}
+          {...dropMetadata}
           data-over={isOver ? 'true' : 'false'}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -165,6 +181,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const repoPath = useGraphStore(state => state.repoPath);
+  const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
   // Fetch stats for all commits in the stack
   useEffect(() => {
@@ -215,11 +232,13 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
       </div>
 
       {/* Top drop zone for new commits at the top of the stack */}
-      <DropZone
-        position={{ kind: 'before', commit: stack.commits[0] }}
-      />
+      {commitsInDisplayOrder[0] && (
+        <DropZone
+          position={{ kind: 'before', commit: commitsInDisplayOrder[0] }}
+        />
+      )}
 
-      {stack.commits.slice().reverse().map((commitId, index) => {
+      {commitsInDisplayOrder.map((commitId, index) => {
         const commit = commitGraph[commitId]?.commit;
         if (!commit) return null;
 
@@ -229,19 +248,10 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const isBeingDragged = draggedCommitId === commitId;
         const isCommitDropTarget = draggedCommitId && draggedCommitId !== commitId;
         const hasConflicts = commit.hasConflicts;
-
-        // For the "after" drop zone, we need to determine the next commit
-        const reversedCommits = stack.commits.slice().reverse();
-        const nextCommitId = reversedCommits[index + 1];
+        const nextCommitId = commitsInDisplayOrder[index + 1];
 
         return (
-          <DropZone
-            key={commitId}
-            position={nextCommitId
-              ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
-              : { kind: 'after', commit: commitId }
-            }
-          >
+          <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <DropZone
               position={{ kind: 'new-branch', commit: commitId }}
             >
@@ -258,7 +268,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 data-parallel={isInParallelGroup ? 'true' : 'false'}
                 data-conflict={hasConflicts ? 'true' : 'false'}
                 style={{
-                  marginBottom: index < stack.commits.length - 1 ? '4px' : '0',
+                  marginBottom: 0,
                 }}
                 onDragStart={(e: React.DragEvent) => {
                   e.stopPropagation();
@@ -374,7 +384,13 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 </div>
               </div>
             </DropZone>
-          </DropZone>
+            <DropZone
+              position={nextCommitId
+                ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
+                : { kind: 'after', commit: commitId }
+              }
+            />
+          </div>
         );
       })}
     </div>
