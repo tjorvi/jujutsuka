@@ -28,7 +28,6 @@ describe('branded type transforms', () => {
       expect(() => createCommitId('')).toThrow('Empty commit ID');
     });
   });
-
   describe('createEmail', () => {
     it('should create valid email', () => {
       const email = createEmail('user@example.com');
@@ -203,4 +202,46 @@ malformed|line
     expect(commits[0].author.name).toBe('Tjörvi Jóhannsson');
     expect(commits[0].author.email).toBe('tjorvi@gmail.com');
   });
+
+  it('should handle conflicts', () => {
+    const logOutput = `f94ed763b474b527f9ad9d70e1441363b44d9620|mwnzumlxszomwqnzspmymkpuxuxzlvyz||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-19 13:20:30.000 +00:00|4c7427359c6de7e4050aa2976c548df065ffed02
+4c7427359c6de7e4050aa2976c548df065ffed02|ollwmrnqpxlvxwtwktpnrtprwmlwlxvz|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|a21095ad158966506cdee8325ba342b6435ce006
+a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added b|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:20.000 +00:00|756b7297726a83c82555f194c597544bda0585eb
+756b7297726a83c82555f194c597544bda0585eb|onmsvlypqpxsoppqrlvsktqpouwlttnt|Added a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:13.000 +00:00|615cf582d8e9a1912347129302aafc00fdfc16c4
+615cf582d8e9a1912347129302aafc00fdfc16c4|xrwzsxqlwusumoqnykvmxvlryyxmrxmw|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|0000000000000000000000000000000000000000
+0000000000000000000000000000000000000000|zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz||||1970-01-01 00:00:00.000 +00:00|
+`;
+
+    const commits = parseJjLog(logOutput);
+
+    expect(commits).toHaveLength(5);
+    expect(commits.map(commit => commit.id)).toEqual([
+      'f94ed763b474b527f9ad9d70e1441363b44d9620',
+      '4c7427359c6de7e4050aa2976c548df065ffed02',
+      'a21095ad158966506cdee8325ba342b6435ce006',
+      '756b7297726a83c82555f194c597544bda0585eb',
+      '615cf582d8e9a1912347129302aafc00fdfc16c4',
+    ]);
+
+    expect(commits[0]).toMatchObject({
+      changeId: 'mwnzumlxszomwqnzspmymkpuxuxzlvyz',
+      description: '(no description)',
+      parents: ['4c7427359c6de7e4050aa2976c548df065ffed02'],
+    });
+    expect(commits[0].timestamp).toEqual(new Date('2025-10-19 13:20:30.000 +00:00'));
+
+    expect(commits[1]).toMatchObject({
+      changeId: 'ollwmrnqpxlvxwtwktpnrtprwmlwlxvz',
+      description: 'Edited a',
+      parents: ['a21095ad158966506cdee8325ba342b6435ce006'],
+    });
+
+    expect(commits[4]).toMatchObject({
+      changeId: 'xrwzsxqlwusumoqnykvmxvlryyxmrxmw',
+      description: 'Edited a',
+      parents: ['0000000000000000000000000000000000000000'],
+    });
+    expect(commits[4].timestamp).toEqual(new Date('2025-10-18 22:25:56.000 +00:00'));
+  });
+
 });

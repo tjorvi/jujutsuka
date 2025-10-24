@@ -149,6 +149,8 @@ export function parseJjLog(logOutput: string): Commit[] {
  */
 export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> {
   const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"';
+  console.log(`📥 Fetching repository commits from ${repoPath}`);
+  console.log(`🔧 Using template: ${template}`);
   const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template} all()`;
 
   return parseJjLog(stdout);
