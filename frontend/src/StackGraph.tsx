@@ -123,26 +123,6 @@ function DropZone({ position, children }: DropZoneProps) {
     }
   };
 
-  if (position.kind === 'new-branch') {
-    return (
-      <div style={{ position: 'relative' }}>
-        {children}
-        <div
-          className={styles.dropZoneBranch}
-          {...dropMetadata}
-          data-over={isOver ? 'true' : 'false'}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          title="Drop to create new branch"
-        >
-          🌿
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       {position.kind === 'before' && (
@@ -171,6 +151,61 @@ function DropZone({ position, children }: DropZoneProps) {
         />
       )}
     </>
+  );
+}
+
+function BranchDropZone({ commitId }: { commitId: CommitId }) {
+  const { handleFileDrop, handleCommitDrop } = useDragDrop();
+  const [isOver, setIsOver] = useState(false);
+
+  const metadata: Record<string, string> = {
+    'data-drop-kind': 'new-branch',
+    'data-from-commit': commitId,
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsOver(false);
+
+    const fc = draggedFileChange(e);
+    const cc = draggedChange(e);
+
+    if (fc) {
+      handleFileDrop({ kind: 'new-branch', commit: commitId }, fc);
+    } else if (cc) {
+      handleCommitDrop(commitId, 'rebase-after', cc);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsOver(false);
+    }
+  };
+
+  return (
+    <div
+      className={styles.dropZoneBranch}
+      {...metadata}
+      data-over={isOver ? 'true' : 'false'}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      title="Drop to split into a new branch"
+    >
+      🌿
+    </div>
   );
 }
 
@@ -234,7 +269,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
       {/* Top drop zone for new commits at the top of the stack */}
       {commitsInDisplayOrder[0] && (
         <DropZone
-          position={{ kind: 'before', commit: commitsInDisplayOrder[0] }}
+          position={{ kind: 'after', commit: commitsInDisplayOrder[0] }}
         />
       )}
 
@@ -252,12 +287,12 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
 
         return (
           <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <DropZone
-              position={{ kind: 'new-branch', commit: commitId }}
-            >
+            <div style={{ position: 'relative' }}>
               <div
                 draggable={true}
                 className={styles.commitCard}
+                data-drop-kind="commit"
+                data-commit={commitId}
                 data-selected={isSelected ? 'true' : 'false'}
                 data-being-dragged={isBeingDragged ? 'true' : 'false'}
                 data-hovered={(isHovered && !isSelected) ? 'true' : 'false'}
@@ -291,11 +326,8 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   const cc = draggedChange(e);
 
                   if (fc) {
-                    // Handle file drop - move to existing commit
-                    console.log('Dropped file:', fc.fileChange, 'from commit:', fc.fromCommitId, 'to commit:', commitId);
                     handleFileDrop({ kind: 'existing', commit: commitId }, fc);
                   } else if (cc) {
-                    // Handle commit drop (squash)
                     handleCommitDrop(commitId, 'squash', cc);
                   }
                 } : undefined}
@@ -308,7 +340,6 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   e.preventDefault();
                   e.stopPropagation();
                   setHoveredCommitId(commitId);
-                  // We can't access getData during drag events, so check if application/json type exists
                   if (e.dataTransfer.types.includes('application/json')) {
                     setIsDraggingFile(true);
                   }
@@ -316,7 +347,6 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 onDragLeave={!isSelected ? (e: React.DragEvent) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  // Only clear hover if we're leaving the commit itself, not moving to a child
                   if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                     setHoveredCommitId(null);
                   }
@@ -383,11 +413,12 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                   {commit.author.name} • {commit.timestamp.toLocaleDateString()}
                 </div>
               </div>
-            </DropZone>
+              <BranchDropZone commitId={commitId} />
+            </div>
             <DropZone
               position={nextCommitId
                 ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
-                : { kind: 'after', commit: commitId }
+                : { kind: 'before', commit: commitId }
               }
             />
           </div>
