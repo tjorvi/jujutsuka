@@ -337,6 +337,19 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const hasConflicts = commit.hasConflicts;
         const nextCommitId = commitsInDisplayOrder[index + 1];
         const stats = commitStats[commitId];
+        const isEmpty = (!stats || (stats.additions === 0 && stats.deletions === 0)) &&
+                        (commit.description === '' || commit.description === '(no description)');
+
+        // Debug logging
+        console.log('Commit', commitId.slice(0, 8), {
+          description: commit.description,
+          stats,
+          isEmpty,
+          hasStats: !!stats,
+          additions: stats?.additions,
+          deletions: stats?.deletions,
+        });
+
         const sizeIndicator = stats ? (() => {
           const { additions, deletions } = stats;
           const indicator = getCommitSizeIndicator(additions, deletions);
@@ -375,6 +388,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 data-file-drag-target={(isDragTarget && !isHovered) ? 'true' : 'false'}
                 data-parallel={isInParallelGroup ? 'true' : 'false'}
                 data-conflict={hasConflicts ? 'true' : 'false'}
+                data-empty={isEmpty ? 'true' : 'false'}
                 style={{
                   marginBottom: 0,
                 }}
