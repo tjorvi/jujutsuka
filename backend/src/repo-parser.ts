@@ -449,6 +449,15 @@ export async function executeSplit(
     .exhaustive();
 }
 
+export async function executeUpdateDescription(
+  repoPath: string,
+  commitId: CommitId,
+  newDescription: string
+): Promise<void> {
+  const description = createDescription(newDescription);
+  await executeJjCommand(repoPath, 'describe', ['-r', commitId, '-m', description]);
+}
+
 export async function getDescription(repoPath: string, ref: string): Promise<Description> {
   const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${ref} --template description`;
   return createDescription(stdout);

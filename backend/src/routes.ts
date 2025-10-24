@@ -9,6 +9,7 @@ import {
   executeSquash,
   executeSplit,
   executeMoveFiles,
+  executeUpdateDescription,
   watchRepoChanges
 } from './repo-parser.ts';
 import { z } from 'zod';
@@ -154,6 +155,11 @@ export const appRouter = router({
             }),
             z.object({ type: z.literal('existing-commit'), commitId: z.string() })
           ])
+        }),
+        z.object({
+          type: z.literal('update-change-description'),
+          commitId: z.string(),
+          description: z.string()
         }),
         
         // Legacy commands (for backwards compatibility)
@@ -306,6 +312,10 @@ export const appRouter = router({
             // For now, throw an error until we implement file discovery
             throw new Error('Split at evolog requires specific files to be provided');
           }
+
+        } else if (command.type === 'update-change-description') {
+          const commitId = createCommitId(command.commitId);
+          await executeUpdateDescription(repoPath, commitId, command.description);
 
         } else if (command.type === 'create-new-change') {
           // Create a new commit with the specified files

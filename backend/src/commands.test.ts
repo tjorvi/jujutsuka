@@ -14,7 +14,9 @@ import {
   executeSquash,
   executeSplit,
   executeMoveFiles,
-  createCommitId
+  executeUpdateDescription,
+  createCommitId,
+  getDescription
 } from './repo-parser.js';
 
 describe('Git Commands', () => {
@@ -150,6 +152,34 @@ describe('Git Commands', () => {
       expect(commit1Files).toHaveLength(3);
       const filePaths = commit1Files.map(f => f.path).sort();
       expect(filePaths).toEqual(['base.txt', 'featureA.txt', 'featureB.txt']);
+    });
+  });
+
+  describe('executeUpdateDescription', () => {
+    it('updates the description of a commit', async () => {
+      const commit = await createCommit(repo, 'Original message', {
+        'file.txt': 'content'
+      });
+
+      await executeUpdateDescription(repo.path, commit.commitId, 'Updated message');
+
+      const updatedCommitId = await getCommitIdFromChangeId(repo, commit.changeId);
+      expect(updatedCommitId).not.toBe(commit.commitId);
+
+      const updatedDescription = await getDescription(repo.path, updatedCommitId);
+      expect(updatedDescription).toBe('Updated message');
+    });
+
+    it('uses fallback description when message is empty', async () => {
+      const commit = await createCommit(repo, 'Another message', {
+        'file.txt': 'content'
+      });
+
+      await executeUpdateDescription(repo.path, commit.commitId, '   ');
+
+      const updatedCommitId = await getCommitIdFromChangeId(repo, commit.changeId);
+      const updatedDescription = await getDescription(repo.path, updatedCommitId);
+      expect(updatedDescription).toBe('(no description)');
     });
   });
 

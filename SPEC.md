@@ -16,6 +16,8 @@ When clicking on a file in the file list, show the diff in a third panel to the 
 
 When clicking on changes, show AI-generated summaries of diffs per file in the file list panel. Users can configure their OpenAI API key in settings to enable this feature.
 
+Let people edit change descriptions directly from the modified files panel.
+
 File dragging: if I start dragging a file I want all _other_ changes to highlight as a drop target.  furthermore I want additional drop targets to appear on links between changes, as well as branch out to the right from each change as a new leaf.
 
 Highlight commits that are in conflict and surface that status in the graph UI.

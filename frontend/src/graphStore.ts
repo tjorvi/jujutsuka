@@ -25,6 +25,7 @@ interface GraphState {
   squashChangeInto: (sourceChangeId: CommitId, targetChangeId: CommitId) => Promise<void>;
   splitAtEvoLog: (changeId: CommitId, evoLogIndex: number, files?: FileChange[]) => Promise<void>;
   createNewChange: (files: FileChange[], parent: CommandTarget) => Promise<void>;
+  updateChangeDescription: (commitId: CommitId, description: string) => Promise<void>;
 
   // Legacy actions (for backwards compatibility)
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
@@ -135,6 +136,15 @@ export const useGraphStore = create<GraphState>()(
           type: 'create-new-change',
           files,
           parent,
+        };
+        await get().executeCommand(command);
+      },
+
+      updateChangeDescription: async (commitId, description) => {
+        const command: IntentionCommand = {
+          type: 'update-change-description',
+          commitId,
+          description,
         };
         await get().executeCommand(command);
       },

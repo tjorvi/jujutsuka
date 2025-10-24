@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { llmService } from './llmService';
@@ -60,6 +60,10 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   const [draggingFilePath, setDraggingFilePath] = useState<string | null>(null);
   const repoPath = useGraphStore(state => state.repoPath);
   const commitGraph = useGraphStore(state => state.commitGraph);
+  const updateChangeDescription = useGraphStore(state => state.updateChangeDescription);
+  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
 
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
@@ -77,6 +81,56 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   // Get the changeId for the selected commit
   const selectedCommit = selectedCommitId && commitGraph ? commitGraph[selectedCommitId]?.commit : null;
   const selectedChangeId = selectedCommit?.changeId;
+
+  useEffect(() => {
+    if (!selectedCommit) {
+      setIsEditingDescription(false);
+      setDescriptionDraft('');
+      return;
+    }
+
+    if (!isEditingDescription) {
+      const nextDraft = selectedCommit.description === '(no description)'
+        ? ''
+        : selectedCommit.description;
+      setDescriptionDraft(nextDraft);
+    }
+  }, [selectedCommit, isEditingDescription]);
+
+  const normalizedDraftDescription = descriptionDraft.trim();
+  const normalizedCurrentDescription = (selectedCommit?.description ?? '').trim();
+  const hasDescriptionChanges = normalizedDraftDescription !== normalizedCurrentDescription;
+
+  const handleStartEditingDescription = () => {
+    if (!selectedCommit) return;
+    setIsEditingDescription(true);
+  };
+
+  const handleCancelEditingDescription = () => {
+    if (selectedCommit) {
+      const nextDraft = selectedCommit.description === '(no description)'
+        ? ''
+        : selectedCommit.description;
+      setDescriptionDraft(nextDraft);
+    } else {
+      setDescriptionDraft('');
+    }
+    setIsEditingDescription(false);
+  };
+
+  const handleSaveDescription = async () => {
+    if (!selectedCommitId) return;
+
+    if (!hasDescriptionChanges) {
+      setIsEditingDescription(false);
+      return;
+    }
+
+    await updateChangeDescription(selectedCommitId, descriptionDraft);
+    setIsEditingDescription(false);
+  };
+
+  const isSaveDisabled = !hasDescriptionChanges || isExecutingCommand;
 
   const handleSummarizeAll = async () => {
     if (!selectedCommitId || fileChanges.kind !== 'success') return;
@@ -180,6 +234,113 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
         fontFamily: 'monospace',
       }}>
         {selectedCommitId.slice(0, 8)}
+      </div>
+      
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        <label style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+        }}>
+          Description
+        </label>
+        {isEditingDescription ? (
+          <>
+            <textarea
+              value={descriptionDraft}
+              onChange={(event) => setDescriptionDraft(event.target.value)}
+              rows={3}
+              autoFocus
+              disabled={isExecutingCommand}
+              placeholder="Describe this change..."
+              style={{
+                resize: 'vertical',
+                minHeight: '60px',
+                padding: '8px 10px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '13px',
+                lineHeight: '1.4',
+                fontFamily: 'inherit',
+                color: '#111827',
+                background: '#ffffff',
+              }}
+            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={handleSaveDescription}
+                disabled={isSaveDisabled}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid #2563eb',
+                  background: isSaveDisabled ? '#bfdbfe' : '#2563eb',
+                  color: '#ffffff',
+                  cursor: isSaveDisabled ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                }}
+              >
+                Save
+              </button>
+              <button
+                onClick={handleCancelEditingDescription}
+                disabled={isExecutingCommand}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid #d1d5db',
+                  background: '#ffffff',
+                  color: '#374151',
+                  cursor: isExecutingCommand ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{
+              padding: '8px 10px',
+              borderRadius: '4px',
+              border: '1px solid #e5e7eb',
+              background: '#ffffff',
+              fontSize: '13px',
+              lineHeight: '1.4',
+              color: '#111827',
+              whiteSpace: 'pre-wrap',
+              minHeight: '48px',
+            }}>
+              {selectedCommit ? selectedCommit.description : ''}
+            </div>
+            <button
+              onClick={handleStartEditingDescription}
+              disabled={!selectedCommit || isExecutingCommand}
+              style={{
+                alignSelf: 'flex-start',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                border: '1px solid #d1d5db',
+                background: (!selectedCommit || isExecutingCommand) ? '#f3f4f6' : '#ffffff',
+                color: '#374151',
+                cursor: (!selectedCommit || isExecutingCommand) ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
+            >
+              Edit description
+            </button>
+          </>
+        )}
       </div>
 
       {fileChanges.kind === 'loading' && selectedCommitId && (

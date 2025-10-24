@@ -54,6 +54,12 @@ export interface CreateNewChangeCommand {
   parent: CommandTarget;
 }
 
+export interface UpdateChangeDescriptionCommand {
+  type: 'update-change-description';
+  commitId: CommitId;
+  description: string;
+}
+
 export type IntentionCommand = 
   | MoveFileToChangeCommand
   | SplitFileFromChangeCommand
@@ -61,7 +67,8 @@ export type IntentionCommand =
   | ReorderChangeCommand
   | SquashChangeIntoCommand
   | SplitAtEvoLogCommand
-  | CreateNewChangeCommand;
+  | CreateNewChangeCommand
+  | UpdateChangeDescriptionCommand;
 
 // Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {
