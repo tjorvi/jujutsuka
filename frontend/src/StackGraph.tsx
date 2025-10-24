@@ -84,8 +84,11 @@ function DropZone({ position, children }: DropZoneProps) {
         handleCommitDrop(position.commit, 'rebase-before', cc);
       } else if (position.kind === 'after') {
         handleCommitDrop(position.commit, 'rebase-after', cc);
+      } else if (position.kind === 'between') {
+        // Insert the dragged change before the commit that sits below this drop zone
+        handleCommitDrop(position.afterCommit, 'rebase-before', cc);
       }
-      // Note: 'between' and 'existing' are not valid for commit drops
+      // Note: 'existing' is not valid for commit drops
     }
   };
 
