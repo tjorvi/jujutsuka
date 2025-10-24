@@ -89,6 +89,7 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
   const commitToStack = new Map<CommitId, StackId>();
   const stacks: Record<StackId, Stack> = {};
   const visited = new Set<CommitId>();
+  const processed = new Set<CommitId>();
   let stackCounter = 0;
 
   // Helper to create a new stack ID
@@ -100,9 +101,30 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
   function buildLinearChain(startCommitId: CommitId): void {
     if (visited.has(startCommitId)) return;
 
+    // Walk backwards to find the earliest ancestor in this linear chain.
+    let firstId: CommitId = startCommitId;
+    while (true) {
+      const node = graph[firstId];
+      if (!node) break;
+
+      const parents = node.commit.parents;
+      if (parents.length !== 1) break;
+
+      const parentId = parents[0];
+      if (visited.has(parentId)) break;
+
+      const parentNode = graph[parentId];
+      if (!parentNode) break;
+
+      // If parent branches to multiple children, stop walking upwards.
+      if (parentNode.children.length !== 1) break;
+
+      firstId = parentId;
+    }
+
     const stackId = nextStackId();
     const chainCommits: CommitId[] = [];
-    let currentId = startCommitId;
+    let currentId = firstId;
 
     // Walk forward through the linear chain
     while (currentId && !visited.has(currentId)) {
@@ -140,15 +162,19 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
 
   // Process all commits starting from roots
   const allCommitIds = Object.keys(graph) as CommitId[];
-  
-  // Sort commits by timestamp to ensure consistent ordering
-  const sortedCommitIds = allCommitIds.sort((a, b) => 
-    graph[a].commit.timestamp.getTime() - graph[b].commit.timestamp.getTime()
-  );
 
-  // Build stacks starting from oldest commits
-  for (const commitId of sortedCommitIds) {
+  // Process all commits starting from newest to oldest (matching JJ log order)
+  for (let index = allCommitIds.length - 1; index >= 0; index--) {
+    const commitId = allCommitIds[index];
+    if (processed.has(commitId)) continue;
+
     buildLinearChain(commitId);
+    const stackId = commitToStack.get(commitId);
+    if (stackId) {
+      for (const stackedCommitId of stacks[stackId].commits) {
+        processed.add(stackedCommitId);
+      }
+    }
   }
 
   // Now build connections between stacks

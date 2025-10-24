@@ -155,7 +155,10 @@ export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> 
   const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "|" ++ if(conflict, "true", "false") ++ "\\n"';
   console.log(`📥 Fetching repository commits from ${repoPath}`);
   console.log(`🔧 Using template: ${template}`);
-  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template} all()`;
+  const escapedTemplateForSingleQuotes = template.replace(/'/g, `'\"'\"'`);
+  console.log(`📝 Equivalent shell command:\njj log --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
+  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template}`;
+  console.log('📜 Raw jj log output:\n', stdout);
 
   return parseJjLog(stdout);
 }
@@ -447,6 +450,7 @@ export async function* watchRepoChanges(repoPath: string) {
 
   let lastOpHead = await currentOpId(repoPath);
   const commits = await getRepositoryCommits(repoPath);
+  console.log(`📦 watchRepoChanges initial emit: ${commits.length} commits`);
   yield { commits, opHead: lastOpHead };
   
   for await (const { filename, eventType } of watch(jjPath, { recursive: true })) {
@@ -456,6 +460,7 @@ export async function* watchRepoChanges(repoPath: string) {
       console.log(`🔄 Operation head changed from ${lastOpHead} to ${currentOpHead}`);
       lastOpHead = currentOpHead || '';
       const commits = await getRepositoryCommits(repoPath);
+      console.log(`📦 watchRepoChanges change emit: ${commits.length} commits`);
       yield { commits, opHead: lastOpHead };
     } else {
       console.log(`ℹ️ Operation head unchanged (${currentOpHead}), no update emitted`);

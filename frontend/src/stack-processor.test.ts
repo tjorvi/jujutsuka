@@ -4,6 +4,7 @@ import {
   createChangeId,
   createEmail, 
   createDescription, 
+  parseJjLog,
   type Commit 
 } from '../../backend/src/repo-parser';
 import { buildStackGraph } from './stackUtils.ts';
@@ -14,7 +15,8 @@ describe('Stack Preprocessing', () => {
     id: string, 
     description: string, 
     parents: string[] = [],
-    timestamp = new Date('2024-01-01')
+    timestamp = new Date('2024-01-01'),
+    hasConflicts = false
   ): Commit {
     return {
       id: createCommitId(id.padEnd(40, '0')),
@@ -26,6 +28,7 @@ describe('Stack Preprocessing', () => {
       },
       timestamp,
       parents: parents.map(p => createCommitId(p.padEnd(40, '0'))),
+      hasConflicts,
     };
   }
 
@@ -158,5 +161,31 @@ describe('Stack Preprocessing', () => {
     // Should have merge connections
     const mergeConnections = stackGraph.connections.filter(conn => conn.type === 'merge');
     expect(mergeConnections.length).toBeGreaterThan(0);
+  });
+
+  test('jj conflict fixture keeps all commits in single linear stack', () => {
+    const logOutput = `
+f94ed763b474b527f9ad9d70e1441363b44d9620|mwnzumlxszomwqnzspmymkpuxuxzlvyz||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-19 13:20:30.000 +00:00|4c7427359c6de7e4050aa2976c548df065ffed02|false
+4c7427359c6de7e4050aa2976c548df065ffed02|ollwmrnqpxlvxwtwktpnrtprwmlwlxvz|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|a21095ad158966506cdee8325ba342b6435ce006|false
+a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added b|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:20.000 +00:00|756b7297726a83c82555f194c597544bda0585eb|false
+756b7297726a83c82555f194c597544bda0585eb|onmsvlypqpxsoppqrlvsktqpouwlttnt|Added a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:13.000 +00:00|615cf582d8e9a1912347129302aafc00fdfc16c4|true
+615cf582d8e9a1912347129302aafc00fdfc16c4|xrwzsxqlwusumoqnykvmxvlryyxmrxmw|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|0000000000000000000000000000000000000000|true
+`;
+
+    const commits = parseJjLog(logOutput);
+    expect(commits).toHaveLength(5);
+
+    const stackGraph = buildStackGraph(commits);
+    expect(Object.keys(stackGraph.stacks)).toHaveLength(1);
+
+    const [stack] = Object.values(stackGraph.stacks);
+    expect(stack.commits).toHaveLength(commits.length);
+    expect(stack.commits).toEqual([
+      createCommitId('615cf582d8e9a1912347129302aafc00fdfc16c4'),
+      createCommitId('756b7297726a83c82555f194c597544bda0585eb'),
+      createCommitId('a21095ad158966506cdee8325ba342b6435ce006'),
+      createCommitId('4c7427359c6de7e4050aa2976c548df065ffed02'),
+      createCommitId('f94ed763b474b527f9ad9d70e1441363b44d9620'),
+    ]);
   });
 });

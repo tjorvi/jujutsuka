@@ -9,3 +9,9 @@ run-frontend:
 [working-directory: 'backend']
 test-backend:
     npm test
+
+[working-directory: 'frontend']
+test-frontend:
+    npm test
+
+test: test-backend test-frontend
