@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useMemo } from 'react';
-import { useSubscription, failed, succeeded, subscriptions } from './api';
+import { useSubscription, failed, succeeded, subscriptions, trpc } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
 import type { Commit, CommitId } from '../../backend/src/repo-parser';
@@ -73,6 +73,7 @@ export function useGraphData() {
   const repoPath = useGraphStore(state => state.repoPath);
   const setCommitGraph = useGraphStore(state => state.setCommitGraph);
   const setCurrentCommitId = useGraphStore(state => state.setCurrentCommitId);
+  const setOperationLog = useGraphStore(state => state.setOperationLog);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
 
@@ -90,6 +91,16 @@ export function useGraphData() {
       const repo = commitsSubscription.data;
       console.log(`📥 Received ${repo.commits.length} commits from subscription, op head ${repo.opHead}`);
       onNewGraph({ commits: repo.commits, currentCommitId: repo.currentCommitId });
+
+      // Fetch operation log whenever the repo changes
+      if (repoPath) {
+        trpc.operationLog.query({ repoPath }).then((opLog) => {
+          console.log('📋 Fetched operation log:', opLog.length, 'entries');
+          setOperationLog(opLog);
+        }).catch((error) => {
+          console.error('❌ Failed to fetch operation log:', error);
+        });
+      }
     }
   }, [commitsSubscription]); // eslint is confused here, according to the docs useEffectEvent shouldn't be listed
 

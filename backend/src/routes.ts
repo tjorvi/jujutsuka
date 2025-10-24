@@ -14,7 +14,10 @@ import {
   executeCreateEmptyChange,
   executeSplitAtEvolog,
   watchRepoChanges,
-  executeCheckout
+  executeCheckout,
+  executeUndo,
+  executeRedo,
+  getOperationLog
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
@@ -60,6 +63,30 @@ export const appRouter = router({
         const commitId = createCommitId(input.commitId);
         const diff = await getFileDiff(input.repoPath, commitId, input.filePath);
         return diff;
+    }),
+  undo: publicProcedure
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .mutation(async ({ input }) => {
+        await executeUndo(input.repoPath);
+        return { success: true };
+    }),
+  redo: publicProcedure
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .mutation(async ({ input }) => {
+        await executeRedo(input.repoPath);
+        return { success: true };
+    }),
+  operationLog: publicProcedure
+    .input(z.object({
+      repoPath: z.string()
+    }))
+    .query(async ({ input }) => {
+        const opLog = await getOperationLog(input.repoPath);
+        return opLog;
     }),
   executeCommand: publicProcedure
     .input(z.object({

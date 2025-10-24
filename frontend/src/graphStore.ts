@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { CommitId, FileChange, Commit } from "../../backend/src/repo-parser";
+import type { CommitId, FileChange, Commit, OpLogEntry } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand } from './commands';
 import { mutations } from './api';
 
@@ -10,12 +10,14 @@ interface GraphState {
   // Data
   commitGraph: CommitGraph | null;
   currentCommitId: CommitId | null;
+  operationLog: OpLogEntry[] | null;
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
 
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
   setCurrentCommitId: (commitId: CommitId | null) => void;
+  setOperationLog: (operationLog: OpLogEntry[]) => void;
   setRepoPath: (repoPath: string) => void;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
@@ -44,6 +46,7 @@ export const useGraphStore = create<GraphState>()(
       // Initial state
       commitGraph: null,
       currentCommitId: null,
+      operationLog: null,
       isExecutingCommand: false,
       repoPath: '',
 
@@ -54,6 +57,10 @@ export const useGraphStore = create<GraphState>()(
 
       setCurrentCommitId: (commitId) => {
         set({ currentCommitId: commitId });
+      },
+
+      setOperationLog: (operationLog) => {
+        set({ operationLog });
       },
 
       // Set repository path

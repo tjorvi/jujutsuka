@@ -218,6 +218,17 @@ export interface EvoLogEntry {
 }
 
 /**
+ * Operation log entry
+ */
+export interface OpLogEntry {
+  operationId: string;
+  fullOperationId: string;
+  operationDescription: string;
+  timestamp: string;
+  user: string;
+}
+
+/**
  * Get file changes for a specific commit
  */
 export async function getCommitFileChanges(repoPath: string, commitId: CommitId): Promise<FileChange[]> {
@@ -533,6 +544,58 @@ export async function executeCheckout(
   commitId: CommitId
 ): Promise<void> {
   await executeJjCommand(repoPath, 'edit', ['-r', commitId]);
+}
+
+/**
+ * Execute undo operation
+ */
+export async function executeUndo(repoPath: string): Promise<void> {
+  await executeJjCommand(repoPath, 'undo', []);
+}
+
+/**
+ * Execute redo operation
+ */
+export async function executeRedo(repoPath: string): Promise<void> {
+  await executeJjCommand(repoPath, 'redo', []);
+}
+
+/**
+ * Get operation log
+ */
+export async function getOperationLog(repoPath: string): Promise<OpLogEntry[]> {
+  try {
+    // Use jj op log with custom template to get parseable output
+    // Fetch both short and full operation IDs for matching
+    const template = 'id.short() ++ "|" ++ id ++ "|" ++ description ++ "|" ++ time.end().format("%Y-%m-%d %H:%M:%S") ++ "|" ++ user ++ "\\n"';
+    const { stdout } = await $({ cwd: repoPath })`jj op log --no-graph --template ${template} --limit 50`;
+
+    const entries: OpLogEntry[] = [];
+    const lines = stdout.trim().split('\n');
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      // Parse the pipe-separated format: operationId|fullOperationId|operationDescription|timestamp|user
+      const parts = line.split('|');
+      if (parts.length >= 5) {
+        const [operationId, fullOperationId, operationDescription, timestamp, user] = parts;
+
+        entries.push({
+          operationId: operationId.trim(),
+          fullOperationId: fullOperationId.trim(),
+          operationDescription: operationDescription.trim(),
+          timestamp: timestamp.trim(),
+          user: user.trim(),
+        });
+      }
+    }
+
+    return entries;
+  } catch (error) {
+    console.error('Error fetching operation log:', error);
+    return [];
+  }
 }
 
 export async function getDescription(repoPath: string, ref: string): Promise<Description> {

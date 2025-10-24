@@ -25,6 +25,7 @@ export const queries = {
   commitStats: trpc.commitStats,
   evolog: trpc.evolog,
   fileDiff: trpc.fileDiff,
+  operationLog: trpc.operationLog,
 } as const;
 
 // stabilise the trpc subscriptions object
