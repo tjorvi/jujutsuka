@@ -3,25 +3,26 @@ import type { CommitId } from "../../backend/src/repo-parser";
 import { useGraphStore } from './graphStore';
 
 interface DiffPanelProps {
-  selectedCommitId?: CommitId;
+  commitId?: CommitId;
   selectedFilePath?: string;
+  isPreview?: boolean;
 }
 
-export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps) {
+export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelProps) {
   const repoPath = useGraphStore(state => state.repoPath);
   const fileDiff = useQuery(
     queries.fileDiff,
     {
       repoPath,
-      commitId: selectedCommitId || '',
+      commitId: commitId || '',
       filePath: selectedFilePath || ''
     },
     {
-      enabled: Boolean(repoPath && selectedCommitId && selectedFilePath)
+      enabled: Boolean(repoPath && commitId && selectedFilePath)
     }
   );
 
-  if (!selectedCommitId || !selectedFilePath) {
+  if (!commitId || !selectedFilePath) {
     return (
       <div style={{
         flex: 1,
@@ -57,6 +58,11 @@ export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps
         paddingBottom: '6px',
       }}>
         📄 Diff: {selectedFilePath}
+        {isPreview && (
+          <span style={{ marginLeft: '8px', fontSize: '12px', color: '#f97316' }}>
+            (evolog preview)
+          </span>
+        )}
       </h3>
       
       <div style={{ 
@@ -65,7 +71,7 @@ export function DiffPanel({ selectedCommitId, selectedFilePath }: DiffPanelProps
         marginBottom: '8px',
         fontFamily: 'monospace',
       }}>
-        {selectedCommitId.slice(0, 8)}
+        {commitId.slice(0, 8)}
       </div>
 
       {fileDiff.kind === 'loading' && (

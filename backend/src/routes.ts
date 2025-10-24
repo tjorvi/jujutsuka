@@ -12,6 +12,7 @@ import {
   executeUpdateDescription,
   executeAbandon,
   executeCreateEmptyChange,
+  executeSplitAtEvolog,
   watchRepoChanges,
   executeCheckout
 } from './repo-parser.ts';
@@ -134,11 +135,7 @@ export const appRouter = router({
         z.object({
           type: z.literal('split-at-evolog'),
           changeId: z.string(),
-          evoLogIndex: z.number(),
-          files: z.array(z.object({
-            path: z.string(),
-            status: z.string()
-          })).optional()
+          entryCommitId: z.string()
         }),
         z.object({
           type: z.literal('create-new-change'),
@@ -305,24 +302,10 @@ export const appRouter = router({
           );
 
         } else if (command.type === 'split-at-evolog') {
-          // For now, treat evolog split as a regular split
-          // TODO: Implement evolog-specific logic when we have evolog integration
           const changeId = createCommitId(command.changeId);
-          const files = command.files || [];
+          const entryCommitId = createCommitId(command.entryCommitId);
 
-          // Create a new commit after this one for the split
-          const target = {
-            type: 'after' as const,
-            commitId: changeId
-          };
-
-          if (files.length > 0) {
-            await executeSplit(repoPath, changeId, files, target);
-          } else {
-            // If no files specified, we need to get all files from the commit
-            // For now, throw an error until we implement file discovery
-            throw new Error('Split at evolog requires specific files to be provided');
-          }
+          await executeSplitAtEvolog(repoPath, changeId, entryCommitId);
 
         } else if (command.type === 'update-change-description') {
           const commitId = createCommitId(command.commitId);

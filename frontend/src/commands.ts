@@ -43,8 +43,7 @@ export interface SquashChangeIntoCommand {
 export interface SplitAtEvoLogCommand {
   type: 'split-at-evolog';
   changeId: CommitId;
-  evoLogIndex: number; // Which evolog entry to split at
-  files?: FileChange[]; // Optional: specific files to split
+  entryCommitId: CommitId; // Commit snapshot from the evolog to resurrect
 }
 
 // Create new change intentions

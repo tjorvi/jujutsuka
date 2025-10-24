@@ -78,8 +78,7 @@ Split a change at a specific evolog entry.
 {
   type: 'split-at-evolog',
   changeId: CommitId,
-  evoLogIndex: number,
-  files?: FileChange[] // Optional: specific files to split
+  entryCommitId: CommitId
 }
 ```
 

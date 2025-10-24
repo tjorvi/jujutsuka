@@ -25,7 +25,7 @@ interface GraphState {
   rebaseChange: (changeId: CommitId, newParent: CommandTarget) => Promise<void>;
   reorderChange: (changeId: CommitId, newPosition: CommandTarget) => Promise<void>;
   squashChangeInto: (sourceChangeId: CommitId, targetChangeId: CommitId) => Promise<void>;
-  splitAtEvoLog: (changeId: CommitId, evoLogIndex: number, files?: FileChange[]) => Promise<void>;
+  splitAtEvoLog: (changeId: CommitId, entryCommitId: CommitId) => Promise<void>;
   createNewChange: (files: FileChange[], parent: CommandTarget) => Promise<void>;
   updateChangeDescription: (commitId: CommitId, description: string) => Promise<void>;
   abandonChange: (commitId: CommitId) => Promise<void>;
@@ -130,12 +130,11 @@ export const useGraphStore = create<GraphState>()(
         await get().executeCommand(command);
       },
 
-      splitAtEvoLog: async (changeId, evoLogIndex, files) => {
+      splitAtEvoLog: async (changeId, entryCommitId) => {
         const command: IntentionCommand = {
           type: 'split-at-evolog',
           changeId,
-          evoLogIndex,
-          files,
+          entryCommitId,
         };
         await get().executeCommand(command);
       },

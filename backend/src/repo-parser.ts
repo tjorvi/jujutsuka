@@ -501,6 +501,24 @@ export async function executeSplit(
     .exhaustive();
 }
 
+export async function executeSplitAtEvolog(
+  repoPath: string,
+  changeCommitId: CommitId,
+  entryCommitId: CommitId
+): Promise<void> {
+  if (changeCommitId === entryCommitId) {
+    throw new Error('Cannot split at the current version of the change');
+  }
+
+  const evologEntries = await getCommitEvolog(repoPath, changeCommitId);
+  const entryExists = evologEntries.some((entry) => entry.commitId === entryCommitId);
+  if (!entryExists) {
+    throw new Error('Selected evolog entry does not belong to the target change');
+  }
+
+  await executeJjCommand(repoPath, 'duplicate', [entryCommitId, '--insert-before', changeCommitId]);
+}
+
 export async function executeUpdateDescription(
   repoPath: string,
   commitId: CommitId,

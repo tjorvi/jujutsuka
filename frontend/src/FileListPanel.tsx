@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { llmService } from './llmService';
@@ -8,6 +8,9 @@ import styles from './FileListPanel.module.css';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
+  viewCommitId?: CommitId;
+  evologPreviewCommitId?: CommitId;
+  onEvologPreviewSelect?: (commitId: CommitId | undefined) => void;
   onFileSelect?: (filePath: string) => void;
   selectedFilePath?: string;
 }
@@ -53,7 +56,14 @@ function getSizeIndicator(additions?: number, deletions?: number) {
   );
 }
 
-export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath }: FileListPanelProps) {
+export function FileListPanel({
+  selectedCommitId,
+  viewCommitId,
+  evologPreviewCommitId,
+  onEvologPreviewSelect,
+  onFileSelect,
+  selectedFilePath,
+}: FileListPanelProps) {
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [loadingSummaries, setLoadingSummaries] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -61,6 +71,7 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   const repoPath = useGraphStore(state => state.repoPath);
   const commitGraph = useGraphStore(state => state.commitGraph);
   const updateChangeDescription = useGraphStore(state => state.updateChangeDescription);
+  const splitAtEvoLog = useGraphStore(state => state.splitAtEvoLog);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
@@ -68,8 +79,8 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
     queries.fileChanges,
-    { repoPath, commitId: selectedCommitId || '' },
-    { enabled: !!repoPath && !!selectedCommitId }
+    { repoPath, commitId: viewCommitId || '' },
+    { enabled: !!repoPath && !!viewCommitId }
   );
 
   const evolog = useQuery(
@@ -80,6 +91,8 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
 
   // Get the changeId for the selected commit
   const selectedCommit = selectedCommitId && commitGraph ? commitGraph[selectedCommitId]?.commit : null;
+  const isPreviewingEvologEntry = Boolean(evologPreviewCommitId);
+  const activeCommitId = viewCommitId ?? selectedCommitId;
   const selectedChangeId = selectedCommit?.changeId;
 
   useEffect(() => {
@@ -227,14 +240,56 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
         📁 Modified Files
       </h3>
       
-      <div style={{ 
-        fontSize: '11px', 
-        color: '#6b7280', 
-        marginBottom: '10px',
-        fontFamily: 'monospace',
-      }}>
-        {selectedCommitId.slice(0, 8)}
-      </div>
+      {activeCommitId && (
+        <div style={{ 
+          fontSize: '11px', 
+          color: '#6b7280', 
+          marginBottom: '10px',
+          fontFamily: 'monospace',
+        }}>
+          Viewing commit {activeCommitId.slice(0, 8)}
+          {selectedCommitId && activeCommitId !== selectedCommitId && (
+            <span style={{ marginLeft: '6px', color: '#f97316' }}>
+              (evolog preview)
+            </span>
+          )}
+        </div>
+      )}
+      
+      {selectedCommitId && evologPreviewCommitId && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          padding: '8px 10px',
+          borderRadius: '4px',
+          border: '1px solid #fde68a',
+          background: '#fef3c7',
+          color: '#78350f',
+          fontSize: '12px',
+          marginBottom: '12px',
+        }}>
+          <span>
+            Viewing evolution entry {evologPreviewCommitId.slice(0, 8)}
+          </span>
+          <button
+            onClick={() => onEvologPreviewSelect?.(undefined)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '4px',
+              border: '1px solid #d97706',
+              background: '#fcd34d',
+              color: '#92400e',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: 500,
+            }}
+          >
+            Back to latest
+          </button>
+        </div>
+      )}
       
       <div style={{
         display: 'flex',
@@ -343,19 +398,19 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
         )}
       </div>
 
-      {fileChanges.kind === 'loading' && selectedCommitId && (
+      {fileChanges.kind === 'loading' && viewCommitId && (
         <div style={{ color: '#6b7280', fontSize: '14px' }}>
           Loading files...
         </div>
       )}
 
-      {fileChanges.kind === 'error' && selectedCommitId && (
+      {fileChanges.kind === 'error' && viewCommitId && (
         <div style={{ color: '#ef4444', fontSize: '14px' }}>
           Error loading files: {String(fileChanges.error)}
         </div>
       )}
 
-      {fileChanges.kind === 'success' && selectedCommitId && (
+      {fileChanges.kind === 'success' && viewCommitId && (
         <div style={{ 
           display: 'flex', 
           flexDirection: 'column', 
@@ -373,12 +428,17 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
               return (
               <div
                 key={index}
-                draggable={true}
+                draggable={!isPreviewingEvologEntry}
                 className={styles.fileItem}
                 data-selected={selectedFilePath === fileChange.path ? 'true' : 'false'}
                 data-dragging={draggingFilePath === fileChange.path ? 'true' : 'false'}
+                style={isPreviewingEvologEntry ? { cursor: 'default' } : undefined}
                 onClick={() => onFileSelect?.(fileChange.path)}
                 onDragStart={(e) => {
+                  if (isPreviewingEvologEntry) {
+                    e.preventDefault();
+                    return;
+                  }
                   setDraggingFilePath(fileChange.path);
                   e.dataTransfer.effectAllowed = 'move';
                   e.dataTransfer.setData('application/json', JSON.stringify({
@@ -392,6 +452,9 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   setDraggingFilePath(null);
                 }}
                 onDragEnter={(e) => {
+                  if (isPreviewingEvologEntry) {
+                    return;
+                  }
                   const fc = draggedFileChange(e)
                   if (fc) {
                     e.currentTarget.classList.add('drag-over');
@@ -400,6 +463,9 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   }
                 }}
                 onDragLeave={(e) => {
+                  if (isPreviewingEvologEntry) {
+                    return;
+                  }
                   e.currentTarget.classList.remove('drag-over');
                   e.currentTarget.classList.remove('same-file');
                   delete e.currentTarget.dataset.dragKind;
@@ -569,42 +635,81 @@ export function FileListPanel({ selectedCommitId, onFileSelect, selectedFilePath
                   No evolution history
                 </div>
               ) : (
-                evolog.data.map((entry, index) => (
-                  <div 
-                    key={index}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #e5e7eb',
-                      fontSize: '12px',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    <div style={{ 
-                      fontWeight: 'bold', 
-                      color: '#374151', 
-                      marginBottom: '4px' 
-                    }}>
-                      {entry.commitId.slice(0, 8)}
-                    </div>
-                    {entry.description && (
-                      <div style={{ 
-                        color: '#6b7280', 
-                        marginBottom: '4px',
-                        fontSize: '11px'
-                      }}>
-                        {entry.description}
+                evolog.data.map((entry) => {
+                  const isCurrentVersion = entry.commitId === selectedCommitId;
+                  const isActiveEntry = activeCommitId === entry.commitId;
+                  const isPreviewEntry = Boolean(evologPreviewCommitId) && entry.commitId === evologPreviewCommitId;
+
+                  const handlePreviewSelect = () => {
+                    if (!onEvologPreviewSelect) {
+                      return;
+                    }
+                    if (isCurrentVersion || isPreviewEntry) {
+                      onEvologPreviewSelect(undefined);
+                    } else {
+                      onEvologPreviewSelect(entry.commitId);
+                    }
+                  };
+
+                  const handleSplit = (event: MouseEvent<HTMLButtonElement>) => {
+                    event.stopPropagation();
+                    if (!selectedCommitId) return;
+                    void splitAtEvoLog(selectedCommitId, entry.commitId);
+                    onEvologPreviewSelect?.(undefined);
+                  };
+
+                  return (
+                    <div
+                      key={entry.commitId}
+                      className={styles.evologEntry}
+                      data-active={isActiveEntry ? 'true' : 'false'}
+                      onClick={handlePreviewSelect}
+                    >
+                      <div className={styles.evologEntryHeader}>
+                        <span className={styles.evologEntryHash}>
+                          {entry.commitId.slice(0, 8)}
+                        </span>
+                        {isCurrentVersion && (
+                          <span className={styles.evologEntryBadge}>
+                            current
+                          </span>
+                        )}
+                        {isPreviewEntry && !isCurrentVersion && (
+                          <span className={styles.evologEntryBadgePreview}>
+                            previewing
+                          </span>
+                        )}
                       </div>
-                    )}
-                    <div style={{ 
-                      color: '#9ca3af', 
-                      fontSize: '10px' 
-                    }}>
-                      {entry.operationDescription} ({entry.operationId.slice(0, 8)})
+                      {entry.description && (
+                        <div className={styles.evologEntryDescription}>
+                          {entry.description}
+                        </div>
+                      )}
+                      <div className={styles.evologEntryOperation}>
+                        {entry.operationDescription} ({entry.operationId.slice(0, 8)})
+                      </div>
+                      <div className={styles.evologEntryFooter}>
+                        <span>
+                          {isCurrentVersion
+                            ? 'Latest version'
+                            : isPreviewEntry
+                              ? 'Click to return to latest'
+                              : 'Click to preview this state'}
+                        </span>
+                        {!isCurrentVersion && (
+                          <button
+                            type="button"
+                            onClick={handleSplit}
+                            disabled={isExecutingCommand}
+                            className={styles.evologEntrySplit}
+                          >
+                            {isExecutingCommand ? 'Splitting…' : 'Split here'}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}

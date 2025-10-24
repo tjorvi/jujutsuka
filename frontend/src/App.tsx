@@ -31,6 +31,7 @@ function App() {
   } = useGraphData();
   const [selectedCommitId, setSelectedCommitId] = useState<CommitId | undefined>();
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
+  const [evologPreviewCommitId, setEvologPreviewCommitId] = useState<CommitId | undefined>();
   const [showSettings, setShowSettings] = useState(false);
   const currentCommitId = useGraphStore(state => state.currentCommitId);
 
@@ -46,12 +47,19 @@ function App() {
   const handleCommitSelect = (commitId: CommitId | undefined) => {
     setSelectedCommitId(commitId);
     setSelectedFilePath(undefined);
+    setEvologPreviewCommitId(undefined);
   };
 
   useEffect(() => {
     if (!currentCommitId) return;
     setSelectedCommitId(prev => prev ?? currentCommitId);
   }, [currentCommitId]);
+
+  const viewCommitId = evologPreviewCommitId ?? selectedCommitId;
+
+  useEffect(() => {
+    setSelectedFilePath(undefined);
+  }, [viewCommitId]);
 
   return (
     <DragDropProvider>
@@ -134,14 +142,18 @@ function App() {
         {/* File list panel */}
         <FileListPanel 
           selectedCommitId={selectedCommitId} 
+          viewCommitId={viewCommitId}
+          evologPreviewCommitId={evologPreviewCommitId}
+          onEvologPreviewSelect={setEvologPreviewCommitId}
           onFileSelect={setSelectedFilePath}
           selectedFilePath={selectedFilePath}
         />
 
         {/* Diff panel */}
         <DiffPanel 
-          selectedCommitId={selectedCommitId}
+          commitId={viewCommitId}
           selectedFilePath={selectedFilePath}
+          isPreview={Boolean(evologPreviewCommitId)}
         />
       </div>
 
