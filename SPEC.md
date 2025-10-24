@@ -18,6 +18,8 @@ When clicking on changes, show AI-generated summaries of diffs per file in the f
 
 File dragging: if I start dragging a file I want all _other_ changes to highlight as a drop target.  furthermore I want additional drop targets to appear on links between changes, as well as branch out to the right from each change as a new leaf.
 
+Highlight commits that are in conflict and surface that status in the graph UI.
+
 # Architectural
 
 - Use command-events and a reducer or a store like zustand.

@@ -225,6 +225,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const isHovered = hoveredCommitId === commitId;
         const isBeingDragged = draggedCommitId === commitId;
         const isCommitDropTarget = draggedCommitId && draggedCommitId !== commitId;
+        const hasConflicts = commit.hasConflicts;
 
         // For the "after" drop zone, we need to determine the next commit
         const reversedCommits = stack.commits.slice().reverse();
@@ -252,6 +253,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 data-commit-drop-target={(isCommitDropTarget && !isHovered) ? 'true' : 'false'}
                 data-file-drag-target={(isDragTarget && !isHovered) ? 'true' : 'false'}
                 data-parallel={isInParallelGroup ? 'true' : 'false'}
+                data-conflict={hasConflicts ? 'true' : 'false'}
                 style={{
                   marginBottom: index < stack.commits.length - 1 ? '4px' : '0',
                 }}
@@ -308,9 +310,27 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 } : undefined}
               >
                 <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: '600', color: '#374151' }}>
-                      change: {commit.changeId.slice(0, 8)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ fontWeight: '600', color: '#374151' }}>
+                        change: {commit.changeId.slice(0, 8)}
+                      </div>
+                      {hasConflicts && (
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#b91c1c',
+                            border: '1px solid #fca5a5',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            background: '#fef2f2',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          conflict
+                        </span>
+                      )}
                     </div>
                     {commitStats[commitId] && (() => {
                       const { additions, deletions } = commitStats[commitId];

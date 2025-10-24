@@ -93,7 +93,7 @@ describe('branded type transforms', () => {
 
 describe('parseJjLog', () => {
   it('should parse single commit correctly', () => {
-    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting with functionality|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12';
+    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting with functionality|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|false';
     
     const commits = parseJjLog(logOutput);
     
@@ -106,30 +106,34 @@ describe('parseJjLog', () => {
     expect(commits[0].timestamp).toEqual(new Date('2025-10-13 21:31:04.000 +00:00'));
     expect(commits[0].parents).toHaveLength(1);
     expect(commits[0].parents[0]).toBe('8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12');
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should parse multiple commits correctly', () => {
-    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting with functionality|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12
-8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|def456abc123|Bootstrapping frontend and backend|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:05:42.000 +00:00|0000000000000000000000000000000000000000`;
+    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting with functionality|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|false
+8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|def456abc123|Bootstrapping frontend and backend|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:05:42.000 +00:00|0000000000000000000000000000000000000000|false`;
     
     const commits = parseJjLog(logOutput);
     
     expect(commits).toHaveLength(2);
     expect(commits[0].id).toBe('2a758693f101d14b8f9f0fa618122d0b6c17ff37');
     expect(commits[1].id).toBe('8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12');
+    expect(commits[0].hasConflicts).toBe(false);
+    expect(commits[1].hasConflicts).toBe(false);
   });
 
   it('should handle commit with no parents', () => {
-    const logOutput = '8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|ghi789jkl012|Initial commit|Author|author@example.com|2025-10-13 21:05:42.000 +00:00|';
+    const logOutput = '8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|ghi789jkl012|Initial commit|Author|author@example.com|2025-10-13 21:05:42.000 +00:00||false';
     
     const commits = parseJjLog(logOutput);
     
     expect(commits).toHaveLength(1);
     expect(commits[0].parents).toEqual([]);
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should handle commit with multiple parents (merge)', () => {
-    const logOutput = '1234567890123456789012345678901234567890|mno345pqr678|Merge commit|Author|author@example.com|2025-10-13 21:05:42.000 +00:00|1111111111111111111111111111111111111111,2222222222222222222222222222222222222222';
+    const logOutput = '1234567890123456789012345678901234567890|mno345pqr678|Merge commit|Author|author@example.com|2025-10-13 21:05:42.000 +00:00|1111111111111111111111111111111111111111,2222222222222222222222222222222222222222|false';
     
     const commits = parseJjLog(logOutput);
     
@@ -137,20 +141,22 @@ describe('parseJjLog', () => {
     expect(commits[0].parents).toHaveLength(2);
     expect(commits[0].parents[0]).toBe('1111111111111111111111111111111111111111');
     expect(commits[0].parents[1]).toBe('2222222222222222222222222222222222222222');
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should skip root commit (all zeros)', () => {
-    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12
-0000000000000000000000000000000000000000|rootchangeid||||1970-01-01 00:00:00.000 +00:00|`;
+    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|false
+0000000000000000000000000000000000000000|rootchangeid||||1970-01-01 00:00:00.000 +00:00|false`;
     
     const commits = parseJjLog(logOutput);
     
     expect(commits).toHaveLength(1);
     expect(commits[0].id).toBe('2a758693f101d14b8f9f0fa618122d0b6c17ff37');
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should throw on empty lines in log output', () => {
-    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|1234567890123456789012345678901234567890
+    const logOutput = `2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Start experimenting|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|1234567890123456789012345678901234567890|false
 
 malformed|line
 8d9cdd8d29c1c8df05c49db21a7dc5dcb6898f12|def456abc123|Valid commit|Author|author@example.com|2025-10-13 21:05:42.000 +00:00|`;
@@ -159,7 +165,7 @@ malformed|line
   });
 
   it('should trim whitespace from all fields', () => {
-    const logOutput = '  2a758693f101d14b8f9f0fa618122d0b6c17ff37  |  abc123def456  |  Start experimenting  |  Author  |  author@example.com  |  2025-10-13 21:31:04.000 +00:00  |  1234567890123456789012345678901234567890  ';
+    const logOutput = '  2a758693f101d14b8f9f0fa618122d0b6c17ff37  |  abc123def456  |  Start experimenting  |  Author  |  author@example.com  |  2025-10-13 21:31:04.000 +00:00  |  1234567890123456789012345678901234567890  |  false  ';
     
     const commits = parseJjLog(logOutput);
     
@@ -171,28 +177,29 @@ malformed|line
     expect(commits[0].timestamp).toEqual(new Date('2025-10-13 21:31:04.000 +00:00'));
     expect(commits[0].parents).toHaveLength(1);
     expect(commits[0].parents[0]).toBe('1234567890123456789012345678901234567890');
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should throw on invalid commit IDs', () => {
-    const logOutput = 'invalid-id|abc123def456|Description|Author|author@example.com|2025-10-13 21:31:04.000 +00:00|';
+    const logOutput = 'invalid-id|abc123def456|Description|Author|author@example.com|2025-10-13 21:31:04.000 +00:00||false';
     
     expect(() => parseJjLog(logOutput)).toThrow('Invalid commit ID');
   });
 
   it('should throw on invalid emails', () => {
-    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Description|Author|invalid-email|2025-10-13 21:31:04.000 +00:00|';
+    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Description|Author|invalid-email|2025-10-13 21:31:04.000 +00:00||false';
     
     expect(() => parseJjLog(logOutput)).toThrow('Invalid email');
   });
 
   it('should throw on invalid timestamps', () => {
-    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Description|Author|author@example.com|invalid-timestamp|';
+    const logOutput = '2a758693f101d14b8f9f0fa618122d0b6c17ff37|abc123def456|Description|Author|author@example.com|invalid-timestamp||false';
     
     expect(() => parseJjLog(logOutput)).toThrow('Unable to parse timestamp');
   });
 
   it('should handle empty descriptions', () => {
-    const logOutput = '28571ac8a11052def1977fcce769181cd2ba16b7|abc123def456||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:55:24.264 +00:00|9c458eafe2fafd597d62cac332e0f03a0ab0bb2c';
+    const logOutput = '28571ac8a11052def1977fcce769181cd2ba16b7|abc123def456||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-13 21:55:24.264 +00:00|9c458eafe2fafd597d62cac332e0f03a0ab0bb2c|false';
     
     const commits = parseJjLog(logOutput);
     
@@ -201,15 +208,16 @@ malformed|line
     expect(commits[0].description).toBe('(no description)');
     expect(commits[0].author.name).toBe('Tjörvi Jóhannsson');
     expect(commits[0].author.email).toBe('tjorvi@gmail.com');
+    expect(commits[0].hasConflicts).toBe(false);
   });
 
   it('should handle conflicts', () => {
-    const logOutput = `f94ed763b474b527f9ad9d70e1441363b44d9620|mwnzumlxszomwqnzspmymkpuxuxzlvyz||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-19 13:20:30.000 +00:00|4c7427359c6de7e4050aa2976c548df065ffed02
-4c7427359c6de7e4050aa2976c548df065ffed02|ollwmrnqpxlvxwtwktpnrtprwmlwlxvz|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|a21095ad158966506cdee8325ba342b6435ce006
-a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added b|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:20.000 +00:00|756b7297726a83c82555f194c597544bda0585eb
-756b7297726a83c82555f194c597544bda0585eb|onmsvlypqpxsoppqrlvsktqpouwlttnt|Added a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:13.000 +00:00|615cf582d8e9a1912347129302aafc00fdfc16c4
-615cf582d8e9a1912347129302aafc00fdfc16c4|xrwzsxqlwusumoqnykvmxvlryyxmrxmw|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|0000000000000000000000000000000000000000
-0000000000000000000000000000000000000000|zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz||||1970-01-01 00:00:00.000 +00:00|
+    const logOutput = `f94ed763b474b527f9ad9d70e1441363b44d9620|mwnzumlxszomwqnzspmymkpuxuxzlvyz||Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-19 13:20:30.000 +00:00|4c7427359c6de7e4050aa2976c548df065ffed02|false
+4c7427359c6de7e4050aa2976c548df065ffed02|ollwmrnqpxlvxwtwktpnrtprwmlwlxvz|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|a21095ad158966506cdee8325ba342b6435ce006|false
+a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added b|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:20.000 +00:00|756b7297726a83c82555f194c597544bda0585eb|false
+756b7297726a83c82555f194c597544bda0585eb|onmsvlypqpxsoppqrlvsktqpouwlttnt|Added a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:13.000 +00:00|615cf582d8e9a1912347129302aafc00fdfc16c4|true
+615cf582d8e9a1912347129302aafc00fdfc16c4|xrwzsxqlwusumoqnykvmxvlryyxmrxmw|Edited a|Tjörvi Jóhannsson|tjorvi@gmail.com|2025-10-18 22:25:56.000 +00:00|0000000000000000000000000000000000000000|true
+0000000000000000000000000000000000000000|zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz||||1970-01-01 00:00:00.000 +00:00|false
 `;
 
     const commits = parseJjLog(logOutput);
@@ -227,6 +235,7 @@ a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added 
       changeId: 'mwnzumlxszomwqnzspmymkpuxuxzlvyz',
       description: '(no description)',
       parents: ['4c7427359c6de7e4050aa2976c548df065ffed02'],
+      hasConflicts: false,
     });
     expect(commits[0].timestamp).toEqual(new Date('2025-10-19 13:20:30.000 +00:00'));
 
@@ -234,12 +243,19 @@ a21095ad158966506cdee8325ba342b6435ce006|mwzqtqnwqyyxwtoqwoslqvlxukvqqmmt|Added 
       changeId: 'ollwmrnqpxlvxwtwktpnrtprwmlwlxvz',
       description: 'Edited a',
       parents: ['a21095ad158966506cdee8325ba342b6435ce006'],
+      hasConflicts: false,
+    });
+
+    expect(commits[3]).toMatchObject({
+      changeId: 'onmsvlypqpxsoppqrlvsktqpouwlttnt',
+      hasConflicts: true,
     });
 
     expect(commits[4]).toMatchObject({
       changeId: 'xrwzsxqlwusumoqnykvmxvlryyxmrxmw',
       description: 'Edited a',
       parents: ['0000000000000000000000000000000000000000'],
+      hasConflicts: true,
     });
     expect(commits[4].timestamp).toEqual(new Date('2025-10-18 22:25:56.000 +00:00'));
   });

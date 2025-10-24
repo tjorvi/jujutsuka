@@ -97,6 +97,7 @@ export interface Commit {
   };
   timestamp: Date;
   parents: CommitId[];
+  hasConflicts: boolean;
 }
 
 /**
@@ -118,7 +119,7 @@ export function parseJjLog(logOutput: string): Commit[] {
       throw new Error(`Line ${i} has ${parts.length} parts, expected at least 7. Line: "${line}"`);
     }
 
-    const [id, changeId, description, authorName, authorEmail, timestamp, parentsStr] = parts;
+    const [id, changeId, description, authorName, authorEmail, timestamp, parentsStr, conflictStr] = parts;
     
     // Skip the root commit (all zeros)
     if (id.trim() === '0000000000000000000000000000000000000000') continue;
@@ -127,6 +128,8 @@ export function parseJjLog(logOutput: string): Commit[] {
       parentsStr.split(',')
         .filter(p => p.trim() !== '')
         .map(p => createCommitId(p.trim())) : [];
+
+    const hasConflicts = conflictStr ? conflictStr.trim().toLowerCase() === 'true' : false;
 
     commits.push({
       id: createCommitId(id),
@@ -138,6 +141,7 @@ export function parseJjLog(logOutput: string): Commit[] {
       },
       timestamp: parseTimestamp(timestamp),
       parents,
+      hasConflicts,
     });
   }
 
@@ -148,7 +152,7 @@ export function parseJjLog(logOutput: string): Commit[] {
  * Helper function to execute the jj log command and parse its output
  */
 export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> {
-  const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "\\n"';
+  const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "|" ++ if(conflict, "true", "false") ++ "\\n"';
   console.log(`📥 Fetching repository commits from ${repoPath}`);
   console.log(`🔧 Using template: ${template}`);
   const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template} all()`;
