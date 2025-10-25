@@ -165,6 +165,12 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   background: #fef2f2;
 }
 
+.commitCard[data-divergent="true"]:not([data-selected="true"]):not([data-conflict="true"]):not([data-current="true"]) {
+  border-left: 3px solid #7c3aed;
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+}
+
 .commitCard[data-current="true"]:not([data-selected="true"]):not([data-conflict="true"]) {
   border: 3px solid #34d399;
   border-left: 3px solid #047857;

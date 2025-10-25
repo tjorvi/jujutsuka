@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { CommitId, FileChange, Commit, OpLogEntry } from "../../backend/src/repo-parser";
+import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand } from './commands';
 import { mutations } from './api';
 
@@ -13,12 +13,14 @@ interface GraphState {
   operationLog: OpLogEntry[] | null;
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
+  divergentChangeIds: ReadonlySet<ChangeId>;
 
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
   setCurrentCommitId: (commitId: CommitId | null) => void;
   setOperationLog: (operationLog: OpLogEntry[]) => void;
   setRepoPath: (repoPath: string) => void;
+  setDivergentChangeIds: (changeIds: ReadonlySet<ChangeId>) => void;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
   // Intention-based UI actions
@@ -49,6 +51,7 @@ export const useGraphStore = create<GraphState>()(
       operationLog: null,
       isExecutingCommand: false,
       repoPath: '',
+      divergentChangeIds: new Set<ChangeId>(),
 
       // Set fresh data from the server
       setCommitGraph: (commitGraph) => {
@@ -66,6 +69,10 @@ export const useGraphStore = create<GraphState>()(
       // Set repository path
       setRepoPath: (repoPath) => {
         set({ repoPath });
+      },
+
+      setDivergentChangeIds: (changeIds) => {
+        set({ divergentChangeIds: new Set(changeIds) });
       },
 
       // Core command execution

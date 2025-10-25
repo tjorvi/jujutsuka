@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useMemo } from 'react';
 import { useSubscription, failed, succeeded, subscriptions, trpc } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
-import type { Commit, CommitId } from '../../backend/src/repo-parser';
+import type { ChangeId, Commit, CommitId } from '../../backend/src/repo-parser';
 
 
 /**
@@ -27,6 +27,23 @@ export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: 
   }
   
   return graph;
+}
+
+function findDivergentChangeIds(commits: Commit[]): ReadonlySet<ChangeId> {
+  const counts = new Map<ChangeId, number>();
+  for (const commit of commits) {
+    const currentCount = counts.get(commit.changeId) ?? 0;
+    counts.set(commit.changeId, currentCount + 1);
+  }
+
+  const divergent = new Set<ChangeId>();
+  for (const [changeId, count] of counts.entries()) {
+    if (count > 1) {
+      divergent.add(changeId);
+    }
+  }
+
+  return divergent;
 }
 
 // Branded string type for stack IDs
@@ -76,14 +93,17 @@ export function useGraphData() {
   const setOperationLog = useGraphStore(state => state.setOperationLog);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
+  const setDivergentChangeIds = useGraphStore(state => state.setDivergentChangeIds);
 
   const commitsSubscription = useSubscription(subscriptions.watchRepoChanges, { repoPath });
 
   const onNewGraph = useEffectEvent((payload: { commits: Commit[]; currentCommitId: CommitId | null }) => {
     console.log('📊 Syncing query data to store');
+    const divergentChangeIds = findDivergentChangeIds(payload.commits);
     const builtGraph = buildCommitGraph(payload.commits);
     setCommitGraph(builtGraph);
     setCurrentCommitId(payload.currentCommitId);
+    setDivergentChangeIds(divergentChangeIds);
   });
 
   useEffect(() => {

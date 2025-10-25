@@ -39,6 +39,7 @@ function App() {
   const [highlightedOps, setHighlightedOps] = useState<Set<string>>(new Set());
   const currentCommitId = useGraphStore(state => state.currentCommitId);
   const operationLog = useGraphStore(state => state.operationLog);
+  const divergentChangeIds = useGraphStore(state => state.divergentChangeIds);
 
   // Save directory to localStorage and sync to store whenever it changes
   useEffect(() => {
@@ -469,6 +470,7 @@ function App() {
                   commitGraph={commitGraph}
                   selectedCommitId={selectedCommitId}
                   currentCommitId={currentCommitId ?? undefined}
+                  divergentChangeIds={divergentChangeIds}
                   onCommitSelect={handleCommitSelect}
                 />
               )}

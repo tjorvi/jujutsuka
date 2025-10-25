@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import type { CommitId, Commit } from "../../backend/src/repo-parser";
+import type { ChangeId, CommitId, Commit } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
 import { draggedFileChange, draggedChange, dragChange, useDragDrop, type DropZonePosition } from './useDragDrop';
@@ -14,6 +14,7 @@ interface StackComponentProps {
   isInParallelGroup?: boolean;
   selectedCommitId?: CommitId;
   currentCommitId?: CommitId;
+  divergentChangeIds: ReadonlySet<ChangeId>;
   onCommitSelect: (commitId: CommitId) => void;
 }
 
@@ -257,7 +258,15 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
   );
 }
 
-function StackComponent({ stack, commitGraph, isInParallelGroup = false, selectedCommitId, currentCommitId, onCommitSelect }: StackComponentProps) {
+function StackComponent({
+  stack,
+  commitGraph,
+  isInParallelGroup = false,
+  selectedCommitId,
+  currentCommitId,
+  divergentChangeIds,
+  onCommitSelect
+}: StackComponentProps) {
   const { handleFileDrop, handleCommitDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
   const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
@@ -335,6 +344,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
         const isBeingDragged = draggedCommitId === commitId;
         const isCommitDropTarget = draggedCommitId && draggedCommitId !== commitId;
         const hasConflicts = commit.hasConflicts;
+        const isDivergent = divergentChangeIds.has(commit.changeId);
         const nextCommitId = commitsInDisplayOrder[index + 1];
         const stats = commitStats[commitId];
         const isEmpty = (!stats || (stats.additions === 0 && stats.deletions === 0)) &&
@@ -388,6 +398,7 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                 data-file-drag-target={(isDragTarget && !isHovered) ? 'true' : 'false'}
                 data-parallel={isInParallelGroup ? 'true' : 'false'}
                 data-conflict={hasConflicts ? 'true' : 'false'}
+                data-divergent={isDivergent ? 'true' : 'false'}
                 data-empty={isEmpty ? 'true' : 'false'}
                 style={{
                   marginBottom: 0,
@@ -475,6 +486,22 @@ function StackComponent({ stack, commitGraph, isInParallelGroup = false, selecte
                           }}
                         >
                           conflict
+                        </span>
+                      )}
+                      {isDivergent && (
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#5b21b6',
+                            border: '1px solid #c4b5fd',
+                            borderRadius: '3px',
+                            padding: '1px 4px',
+                            background: '#ede9fe',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          divergent
                         </span>
                       )}
                     </div>
@@ -643,12 +670,14 @@ export function StackGraphComponent({
   commitGraph,
   selectedCommitId,
   currentCommitId,
+  divergentChangeIds,
   onCommitSelect
 }: {
   stackGraph: LayoutStackGraph;
   commitGraph: Record<CommitId, { commit: Commit; children: CommitId[] }>;
   selectedCommitId?: CommitId;
   currentCommitId?: CommitId;
+  divergentChangeIds: ReadonlySet<ChangeId>;
   onCommitSelect: (commitId: CommitId) => void;
 }) {
   // Log when commit graph changes to track optimistic updates
@@ -817,6 +846,7 @@ export function StackGraphComponent({
                         isInParallelGroup={item.isParallel}
                         selectedCommitId={selectedCommitId}
                         currentCommitId={currentCommitId}
+                        divergentChangeIds={divergentChangeIds}
                         onCommitSelect={handleCommitSelect}
                       />
                     </div>
