@@ -82,6 +82,7 @@ Drop targets support 5 target types:
 - **Evolution log preview mode**: Click on past entries in the evolog to preview that version of the commit
 - **Preview warning banner**: When viewing an older version, yellow warning banner shows which version is active with "Back to latest" button
 - **Split at evolog entry**: "Split here" button on past entries to resurrect that historical version as a new commit
+- **Conflict handling**: When a split resurrects an older version, the new commit auto-resolves by accepting the resurrected content so both resulting commits land conflict-free
 - **Entry metadata**: Each evolog entry shows operation ID and description that created that version
 - **Current/previewing badges**: Visual indication of which version is latest vs which is being previewed
 

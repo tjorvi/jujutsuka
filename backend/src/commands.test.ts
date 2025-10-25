@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { execa } from 'execa';
 import {
   createTestRepo,
   createCommit,
@@ -16,7 +19,11 @@ import {
   executeMoveFiles,
   executeUpdateDescription,
   createCommitId,
-  getDescription
+  getDescription,
+  executeSplitAtEvolog,
+  getCommitEvolog,
+  createChangeId,
+  getRepositoryCommits
 } from './repo-parser.js';
 
 describe('Git Commands', () => {
@@ -180,6 +187,55 @@ describe('Git Commands', () => {
       const updatedCommitId = await getCommitIdFromChangeId(repo, commit.changeId);
       const updatedDescription = await getDescription(repo.path, updatedCommitId);
       expect(updatedDescription).toBe('(no description)');
+    });
+  });
+
+  describe('executeSplitAtEvolog', () => {
+    it('resolves conflicts by accepting the current version after splitting', async () => {
+      const filePath = join(repo.path, 'file.txt');
+
+      await writeFile(filePath, 'base\n');
+      await execa('jj', ['describe', '-m', 'Base'], { cwd: repo.path });
+      await execa('jj', ['new'], { cwd: repo.path });
+
+      await writeFile(filePath, 'first\n');
+      await execa('jj', ['describe', '-m', 'Feature'], { cwd: repo.path });
+
+      await writeFile(filePath, 'second\n');
+      await execa('jj', ['describe', '-m', 'Feature'], { cwd: repo.path });
+
+      const { stdout: changeCommitStdout } = await execa('jj', ['log', '--no-graph', '-r', '@', '-T', 'commit_id'], { cwd: repo.path });
+      const changeCommitId = createCommitId(changeCommitStdout.trim());
+
+      const { stdout: changeIdStdout } = await execa('jj', ['log', '--no-graph', '-r', changeCommitId, '-T', 'change_id'], { cwd: repo.path });
+      const changeId = createChangeId(changeIdStdout.trim());
+
+      const evologEntries = await getCommitEvolog(repo.path, changeCommitId);
+      expect(evologEntries.length).toBeGreaterThan(1);
+
+      const previousEntry = evologEntries[1];
+      if (!previousEntry) {
+        throw new Error('Expected a previous evolog entry');
+      }
+
+      await executeSplitAtEvolog(repo.path, changeCommitId, previousEntry.commitId);
+
+      const commits = await getRepositoryCommits(repo.path);
+      const latestCommit = commits.find((commit) => commit.changeId === changeId);
+      expect(latestCommit).toBeDefined();
+      expect(latestCommit?.hasConflicts).toBe(false);
+
+      expect(latestCommit?.parents).toHaveLength(1);
+      const parentCommit = commits.find((commit) => commit.id === latestCommit?.parents[0]);
+      expect(parentCommit).toBeDefined();
+      expect(parentCommit?.hasConflicts).toBe(false);
+
+      const { stdout: conflictStatus } = await execa(
+        'jj',
+        ['log', '--no-graph', '-r', `change_id(${changeId})`, '-T', 'if(conflict, "true", "false")'],
+        { cwd: repo.path }
+      );
+      expect(conflictStatus.trim()).toBe('false');
     });
   });
 

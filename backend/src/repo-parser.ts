@@ -521,6 +521,9 @@ export async function executeSplitAtEvolog(
     throw new Error('Cannot split at the current version of the change');
   }
 
+  const { stdout: changeIdOutput } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeCommitId} --template change_id`;
+  const changeId = createChangeId(changeIdOutput.trim());
+
   const evologEntries = await getCommitEvolog(repoPath, changeCommitId);
   const entryExists = evologEntries.some((entry) => entry.commitId === entryCommitId);
   if (!entryExists) {
@@ -528,6 +531,35 @@ export async function executeSplitAtEvolog(
   }
 
   await executeJjCommand(repoPath, 'duplicate', [entryCommitId, '--insert-before', changeCommitId]);
+
+  const changeRevset = `change_id(${changeId})`;
+  const { stdout: conflictStatusOutput } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeRevset} --template ${'if(conflict, "true", "false")'}`;
+  const hasConflicts = conflictStatusOutput.trim().split('\n').some((line) => line.trim() === 'true');
+
+  if (!hasConflicts) {
+    return;
+  }
+
+  try {
+    const { stdout: conflictListOutput } = await $({ cwd: repoPath })`jj resolve -r ${changeRevset} --list`;
+    const conflictPaths = conflictListOutput
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => line.split(/\s+/)[0])
+      .filter((path) => path.length > 0);
+
+    if (conflictPaths.length === 0) {
+      return;
+    }
+
+    await executeJjCommand(repoPath, 'resolve', ['-r', changeRevset, '--tool', ':theirs', ...conflictPaths]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes('No conflicts found')) {
+      throw error;
+    }
+  }
 }
 
 export async function executeUpdateDescription(
