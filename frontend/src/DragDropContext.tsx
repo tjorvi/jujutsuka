@@ -1,9 +1,9 @@
 import type { CommitId } from "../../backend/src/repo-parser";
-import { DragDropContext, type FileChangeDragData, type ChangeDragData, type DropZonePosition } from './useDragDrop';
+import { DragDropContext, type FileChangeDragData, type ChangeDragData, type DropZonePosition, type BookmarkDragData } from './useDragDrop';
 import { useGraphStore } from './graphStore';
 
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
-  const { executeRebase, executeSquash, executeSplit, executeMoveFiles } = useGraphStore();
+  const { executeRebase, executeSquash, executeSplit, executeMoveFiles, moveBookmark } = useGraphStore();
   const commitGraph = useGraphStore(state => state.commitGraph);
 
   const isAncestor = (possibleAncestor: CommitId, commitId: CommitId): boolean => {
@@ -135,10 +135,19 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const handleBookmarkDrop = (position: DropZonePosition, dragData: BookmarkDragData) => {
+    if (position.kind !== 'existing') {
+      return;
+    }
+
+    void moveBookmark(dragData.bookmarkName, position.commit);
+  };
+
   return (
     <DragDropContext.Provider value={{
       handleFileDrop,
       handleCommitDrop,
+      handleBookmarkDrop,
     }}>
       {children}
     </DragDropContext.Provider>

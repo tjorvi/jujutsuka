@@ -5,6 +5,7 @@ import {
   getFileDiff,
   getCommitStats,
   createCommitId,
+  createBookmarkName,
   executeRebase,
   executeSquash,
   executeSplit,
@@ -17,7 +18,9 @@ import {
   executeCheckout,
   executeUndo,
   executeRedo,
-  getOperationLog
+  getOperationLog,
+  executeMoveBookmark,
+  executeDeleteBookmark
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
@@ -196,6 +199,15 @@ export const appRouter = router({
           type: z.literal('checkout-change'),
           commitId: z.string()
         }),
+        z.object({
+          type: z.literal('move-bookmark'),
+          bookmarkName: z.string(),
+          targetCommitId: z.string()
+        }),
+        z.object({
+          type: z.literal('delete-bookmark'),
+          bookmarkName: z.string()
+        }),
         
         // Legacy commands (for backwards compatibility)
         z.object({
@@ -356,6 +368,15 @@ export const appRouter = router({
           const commitId = createCommitId(command.commitId);
           await executeAbandon(repoPath, commitId);
 
+        } else if (command.type === 'move-bookmark') {
+          const bookmarkName = createBookmarkName(command.bookmarkName);
+          const targetCommitId = createCommitId(command.targetCommitId);
+          await executeMoveBookmark(repoPath, bookmarkName, targetCommitId);
+
+        } else if (command.type === 'delete-bookmark') {
+          const bookmarkName = createBookmarkName(command.bookmarkName);
+          await executeDeleteBookmark(repoPath, bookmarkName);
+
         } else if (command.type === 'rebase') {
           const commitId = createCommitId(command.commitId);
           const target = parseCommandTarget(command.target);
@@ -375,7 +396,7 @@ export const appRouter = router({
           const sourceCommitId = createCommitId(command.sourceCommitId);
           const targetCommitId = createCommitId(command.targetCommitId);
           await executeMoveFiles(repoPath, sourceCommitId, targetCommitId, command.files);
-          
+
         } else {
           throw new Error(`Unknown command type: ${(command as any).type}`);
         }

@@ -1,4 +1,4 @@
-import type { CommitId, FileChange, CommandTarget } from "../../backend/src/repo-parser";
+import type { CommitId, FileChange, CommandTarget, BookmarkName } from "../../backend/src/repo-parser";
 
 // Re-export CommandTarget for convenience
 export type { CommandTarget };
@@ -69,6 +69,18 @@ export interface CheckoutChangeCommand {
   commitId: CommitId;
 }
 
+// Bookmark manipulation intentions
+export interface MoveBookmarkCommand {
+  type: 'move-bookmark';
+  bookmarkName: BookmarkName;
+  targetCommitId: CommitId;
+}
+
+export interface DeleteBookmarkCommand {
+  type: 'delete-bookmark';
+  bookmarkName: BookmarkName;
+}
+
 export type IntentionCommand = 
   | MoveFileToChangeCommand
   | SplitFileFromChangeCommand
@@ -79,7 +91,9 @@ export type IntentionCommand =
   | CreateNewChangeCommand
   | UpdateChangeDescriptionCommand
   | AbandonChangeCommand
-  | CheckoutChangeCommand;
+  | CheckoutChangeCommand
+  | MoveBookmarkCommand
+  | DeleteBookmarkCommand;
 
 // Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {

@@ -1,8 +1,8 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import type { ChangeId, CommitId, Commit } from "../../backend/src/repo-parser";
+import type { ChangeId, CommitId, Commit, BookmarkName } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
-import { draggedFileChange, draggedChange, dragChange, useDragDrop, type DropZonePosition } from './useDragDrop';
+import { draggedFileChange, draggedChange, dragChange, useDragDrop, dragBookmark, draggedBookmark, type DropZonePosition } from './useDragDrop';
 import { queries } from './api';
 import { useGraphStore } from './graphStore';
 import styles from './StackGraph.module.css';
@@ -60,6 +60,11 @@ function getCommitSizeIndicator(additions: number, deletions: number) {
     color: colors[size],
     tooltip: `+${additions} -${deletions}`,
   };
+}
+
+function isSyntheticBookmark(bookmarkName: BookmarkName): boolean {
+  const label = bookmarkName as unknown as string;
+  return label === '@' || label === 'git_head()';
 }
 
 interface DropZoneProps {
@@ -267,7 +272,7 @@ function StackComponent({
   divergentChangeIds,
   onCommitSelect
 }: StackComponentProps) {
-  const { handleFileDrop, handleCommitDrop } = useDragDrop();
+  const { handleFileDrop, handleCommitDrop, handleBookmarkDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
   const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
@@ -277,6 +282,7 @@ function StackComponent({
   const checkoutChange = useGraphStore(state => state.checkoutChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
+  const deleteBookmark = useGraphStore(state => state.deleteBookmark);
   const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
   // Fetch stats for all commits in the stack
@@ -425,9 +431,12 @@ function StackComponent({
 
                   const fc = draggedFileChange(e);
                   const cc = draggedChange(e);
+                  const bc = draggedBookmark(e);
 
                   if (fc) {
                     handleFileDrop({ kind: 'existing', commit: commitId }, fc);
+                  } else if (bc) {
+                    handleBookmarkDrop({ kind: 'existing', commit: commitId }, bc);
                   } else if (cc) {
                     handleCommitDrop({ kind: 'existing', commit: commitId }, cc, { mode: 'squash' });
                   }
@@ -518,10 +527,34 @@ function StackComponent({
                     <div className={styles.bookmarkList}>
                       {commitBookmarks.map((bookmarkName) => {
                         const badgeLabel = bookmarkName as string;
+                        const synthetic = isSyntheticBookmark(bookmarkName);
                         return (
-                          <span key={badgeLabel} className={styles.bookmarkBadge}>
+                          <span
+                            key={badgeLabel}
+                            className={styles.bookmarkBadge}
+                            draggable={!synthetic}
+                            onDragStart={!synthetic ? (bookmarkDragEvent: React.DragEvent) => {
+                              bookmarkDragEvent.stopPropagation();
+                              dragBookmark(bookmarkDragEvent, { source: 'bookmark', bookmarkName });
+                            } : undefined}
+                          >
                             <span aria-hidden="true">🔖</span>
                             {badgeLabel}
+                            {!synthetic && (
+                              <button
+                                type="button"
+                                className={styles.bookmarkRemoveButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  void deleteBookmark(bookmarkName);
+                                }}
+                                title="Remove bookmark"
+                                aria-label={`Remove bookmark ${badgeLabel}`}
+                              >
+                                ×
+                              </button>
+                            )}
                           </span>
                         );
                       })}

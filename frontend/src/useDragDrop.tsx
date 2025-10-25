@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ChangeId, CommitId } from "../../backend/src/repo-parser";
+import type { ChangeId, CommitId, BookmarkName } from "../../backend/src/repo-parser";
 import { z } from 'zod';
 
 const changeDragDataSchema = z.object({
@@ -21,6 +21,12 @@ const fileChangeDragDataSchema = z.object({
   fromCommitId: z.string().transform((val) => val as CommitId),
 });
 export type FileChangeDragData = z.infer<typeof fileChangeDragDataSchema>;
+
+const bookmarkDragDataSchema = z.object({
+  source: z.literal('bookmark'),
+  bookmarkName: z.string().transform((val) => val as BookmarkName),
+});
+export type BookmarkDragData = z.infer<typeof bookmarkDragDataSchema>;
 
 export function dragChange(e: React.DragEvent, data: ChangeDragData) {
   e.dataTransfer.setData('application/json', JSON.stringify(data));
@@ -53,6 +59,22 @@ export function draggedFileChange(e: React.DragEvent) {
   }
 }
 
+export function dragBookmark(e: React.DragEvent, data: BookmarkDragData) {
+  e.dataTransfer.setData('application/json', JSON.stringify(data));
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+export function draggedBookmark(e: React.DragEvent): BookmarkDragData | null {
+  const data = e.dataTransfer.getData('application/json');
+  if (!data) return null;
+  try {
+    const parsed = JSON.parse(data);
+    return bookmarkDragDataSchema.parse(parsed);
+  } catch {
+    return null;
+  }
+}
+
 
 
 export type DropZonePosition = {
@@ -72,6 +94,7 @@ interface DragDropContextType {
   // Domain command actions
   handleFileDrop: (position: DropZonePosition, dragData: FileChangeDragData) => void;
   handleCommitDrop: (position: DropZonePosition, dragData: ChangeDragData, options?: { mode?: CommitDropMode }) => void;
+  handleBookmarkDrop: (position: DropZonePosition, dragData: BookmarkDragData) => void;
 }
 
 export const DragDropContext = createContext<DragDropContextType | null>(null);

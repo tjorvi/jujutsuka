@@ -36,6 +36,8 @@ interface GraphState {
   updateChangeDescription: (commitId: CommitId, description: string) => Promise<void>;
   abandonChange: (commitId: CommitId) => Promise<void>;
   checkoutChange: (commitId: CommitId) => Promise<void>;
+  moveBookmark: (bookmarkName: BookmarkName, targetCommitId: CommitId) => Promise<void>;
+  deleteBookmark: (bookmarkName: BookmarkName) => Promise<void>;
 
   // Legacy actions (for backwards compatibility)
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
@@ -210,6 +212,23 @@ export const useGraphStore = create<GraphState>()(
         const command: IntentionCommand = {
           type: 'checkout-change',
           commitId,
+        };
+        await get().executeCommand(command);
+      },
+
+      moveBookmark: async (bookmarkName, targetCommitId) => {
+        const command: IntentionCommand = {
+          type: 'move-bookmark',
+          bookmarkName,
+          targetCommitId,
+        };
+        await get().executeCommand(command);
+      },
+
+      deleteBookmark: async (bookmarkName) => {
+        const command: IntentionCommand = {
+          type: 'delete-bookmark',
+          bookmarkName,
         };
         await get().executeCommand(command);
       },

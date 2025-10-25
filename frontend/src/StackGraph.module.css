@@ -219,6 +219,20 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   padding: 1px 4px;
 }
 
+.bookmarkRemoveButton {
+  border: none;
+  background: transparent;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0;
+}
+
+.bookmarkRemoveButton:hover {
+  color: #b45309;
+}
+
 /* Empty commit + selected (but not current) */
 .commitCard[data-empty="true"][data-selected="true"]:not([data-current="true"]) {
   background: #e0f2fe;
