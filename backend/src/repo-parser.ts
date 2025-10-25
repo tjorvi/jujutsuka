@@ -684,6 +684,14 @@ export async function executeDeleteBookmark(
   await executeJjCommand(repoPath, 'bookmark', ['delete', bookmarkName]);
 }
 
+export async function executeCreateBookmark(
+  repoPath: string,
+  bookmarkName: BookmarkName,
+  targetCommitId: CommitId
+): Promise<void> {
+  await executeJjCommand(repoPath, 'bookmark', ['set', bookmarkName, '-r', targetCommitId]);
+}
+
 export async function executeSplitAtEvolog(
   repoPath: string,
   changeCommitId: CommitId,

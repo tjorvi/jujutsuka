@@ -81,6 +81,12 @@ export interface DeleteBookmarkCommand {
   bookmarkName: BookmarkName;
 }
 
+export interface AddBookmarkCommand {
+  type: 'add-bookmark';
+  bookmarkName: BookmarkName;
+  targetCommitId: CommitId;
+}
+
 export type IntentionCommand = 
   | MoveFileToChangeCommand
   | SplitFileFromChangeCommand
@@ -93,7 +99,8 @@ export type IntentionCommand =
   | AbandonChangeCommand
   | CheckoutChangeCommand
   | MoveBookmarkCommand
-  | DeleteBookmarkCommand;
+  | DeleteBookmarkCommand
+  | AddBookmarkCommand;
 
 // Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {

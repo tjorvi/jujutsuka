@@ -1,10 +1,11 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type FormEvent } from 'react';
 import { queries, useQuery, trpc } from './api';
-import type { CommitId } from "../../backend/src/repo-parser";
+import type { CommitId, BookmarkName } from "../../backend/src/repo-parser";
 import { llmService } from './llmService';
 import { useGraphStore } from './graphStore';
 import { draggedFileChange } from './useDragDrop';
 import styles from './FileListPanel.module.css';
+import { z } from 'zod';
 
 interface FileListPanelProps {
   selectedCommitId?: CommitId;
@@ -73,8 +74,12 @@ export function FileListPanel({
   const updateChangeDescription = useGraphStore(state => state.updateChangeDescription);
   const splitAtEvoLog = useGraphStore(state => state.splitAtEvoLog);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
+  const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
+  const addBookmark = useGraphStore(state => state.addBookmark);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [newBookmarkName, setNewBookmarkName] = useState('');
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
 
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
@@ -94,6 +99,9 @@ export function FileListPanel({
   const isPreviewingEvologEntry = Boolean(evologPreviewCommitId);
   const activeCommitId = viewCommitId ?? selectedCommitId;
   const selectedChangeId = selectedCommit?.changeId;
+  const selectedCommitBookmarks = selectedCommitId ? (bookmarksByCommit[selectedCommitId] ?? []) : [];
+  const bookmarkNameSchema = useMemo(() => z.string().trim().min(1, 'Bookmark name is required'), []);
+  const syntheticBookmarkNames = useMemo(() => new Set(['@', 'git_head()']), []);
 
   useEffect(() => {
     if (!selectedCommit) {
@@ -109,6 +117,11 @@ export function FileListPanel({
       setDescriptionDraft(nextDraft);
     }
   }, [selectedCommit, isEditingDescription]);
+
+  useEffect(() => {
+    setNewBookmarkName('');
+    setBookmarkError(null);
+  }, [selectedCommitId]);
 
   const normalizedDraftDescription = descriptionDraft.trim();
   const normalizedCurrentDescription = (selectedCommit?.description ?? '').trim();
@@ -144,6 +157,40 @@ export function FileListPanel({
   };
 
   const isSaveDisabled = !hasDescriptionChanges || isExecutingCommand;
+
+  const handleAddBookmark = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCommitId) {
+      return;
+    }
+
+    const rawName = newBookmarkName;
+
+    try {
+      const validatedName = bookmarkNameSchema.parse(rawName) as string;
+      if (syntheticBookmarkNames.has(validatedName)) {
+        setBookmarkError('This bookmark name is reserved.');
+        return;
+      }
+
+      const alreadyExists = selectedCommitBookmarks.some(bookmark => (bookmark as unknown as string) === validatedName);
+      if (alreadyExists) {
+        setBookmarkError('Bookmark already exists on this change.');
+        return;
+      }
+
+      setBookmarkError(null);
+      await addBookmark(validatedName as BookmarkName, selectedCommitId);
+      setNewBookmarkName('');
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const firstIssue = error.issues[0];
+        setBookmarkError(firstIssue?.message ?? 'Invalid bookmark name.');
+        return;
+      }
+      throw error;
+    }
+  };
 
   const handleSummarizeAll = async () => {
     if (!selectedCommitId || fileChanges.kind !== 'success') return;
@@ -395,6 +442,54 @@ export function FileListPanel({
               Edit description
             </button>
           </>
+        )}
+      </div>
+
+      <div className={styles.bookmarkSection}>
+        <label style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+        }}>
+          Bookmarks
+        </label>
+        {selectedCommitBookmarks.length > 0 ? (
+          <div className={styles.bookmarkList}>
+            {selectedCommitBookmarks.map((bookmark) => {
+              const label = bookmark as unknown as string;
+              return (
+                <span key={label} className={styles.bookmarkBadge}>
+                  <span aria-hidden="true">🔖</span>
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{
+            fontSize: '12px',
+            color: '#6b7280',
+          }}>
+            No bookmarks on this change yet.
+          </div>
+        )}
+        <form className={styles.bookmarkForm} onSubmit={handleAddBookmark}>
+          <input
+            type="text"
+            value={newBookmarkName}
+            onChange={(event) => setNewBookmarkName(event.target.value)}
+            placeholder="Add bookmark…"
+            disabled={isExecutingCommand}
+          />
+          <button type="submit" disabled={isExecutingCommand || newBookmarkName.trim() === ''}>
+            Add
+          </button>
+        </form>
+        {bookmarkError && (
+          <div className={styles.bookmarkError}>
+            {bookmarkError}
+          </div>
         )}
       </div>
 

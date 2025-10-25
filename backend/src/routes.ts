@@ -20,7 +20,8 @@ import {
   executeRedo,
   getOperationLog,
   executeMoveBookmark,
-  executeDeleteBookmark
+  executeDeleteBookmark,
+  executeCreateBookmark
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
@@ -208,6 +209,11 @@ export const appRouter = router({
           type: z.literal('delete-bookmark'),
           bookmarkName: z.string()
         }),
+        z.object({
+          type: z.literal('add-bookmark'),
+          bookmarkName: z.string(),
+          targetCommitId: z.string()
+        }),
         
         // Legacy commands (for backwards compatibility)
         z.object({
@@ -376,6 +382,11 @@ export const appRouter = router({
         } else if (command.type === 'delete-bookmark') {
           const bookmarkName = createBookmarkName(command.bookmarkName);
           await executeDeleteBookmark(repoPath, bookmarkName);
+
+        } else if (command.type === 'add-bookmark') {
+          const bookmarkName = createBookmarkName(command.bookmarkName);
+          const targetCommitId = createCommitId(command.targetCommitId);
+          await executeCreateBookmark(repoPath, bookmarkName, targetCommitId);
 
         } else if (command.type === 'rebase') {
           const commitId = createCommitId(command.commitId);
