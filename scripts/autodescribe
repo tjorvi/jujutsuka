@@ -1,0 +1,29 @@
+#!/usr/bin/env xonsh
+
+if not $ARG1:
+    print("Usage: autodescribe <revset>")
+    exit(1)
+
+revset = $ARG1
+
+commits = [x.split('-', 1) for x in $(jj log -r @(revset) --template 'change_id ++ "-" ++ description ++ "\n"' --no-graph).splitlines()]
+
+for changeId, description in commits:
+    if description.strip() != "":
+        echo f"Commit {changeId} already has a description."
+        exit(1)
+
+for changeId, _ in commits:
+    surroundingChanges = $(jj log -r f'{changeId}--::{changeId}++')
+    changeDiff = $(jj show @(changeId) --git)
+
+    prompt = f'''Give me a commit description for change "{changeId}". Output nothing but the commit message. Here's the surrounding changes:
+{surroundingChanges}
+
+And here's the diff:
+{changeDiff}
+'''
+    commitMsg = $(llm @(prompt))
+
+    $(jj describe -r @(changeId) --message @(commitMsg))
+    echo f"Set description for {changeId} to: {commitMsg}"

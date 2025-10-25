@@ -3,22 +3,66 @@ import { match } from 'ts-pattern';
 import { join } from 'node:path';
 import { watch } from 'node:fs/promises';
 import process from 'node:process';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+type AsyncTask<T> = () => Promise<T>;
+
+class RepoExecutionQueue {
+  private tail: Promise<void> = Promise.resolve();
+
+  enqueue<T>(task: AsyncTask<T>): Promise<T> {
+    const resultPromise = this.tail.then(() => task());
+    this.tail = resultPromise.then(
+      () => undefined,
+      () => undefined
+    );
+    return resultPromise;
+  }
+}
+
+const repoExecutionQueues = new Map<string, RepoExecutionQueue>();
+const repoExecutionContext = new AsyncLocalStorage<Set<string>>();
+
+function getRepoExecutionQueue(repoPath: string): RepoExecutionQueue {
+  let queue = repoExecutionQueues.get(repoPath);
+  if (!queue) {
+    queue = new RepoExecutionQueue();
+    repoExecutionQueues.set(repoPath, queue);
+  }
+  return queue;
+}
+
+async function runWithRepoExclusive<T>(repoPath: string, task: AsyncTask<T>): Promise<T> {
+  const currentContext = repoExecutionContext.getStore();
+  if (currentContext?.has(repoPath)) {
+    return task();
+  }
+
+  const queue = getRepoExecutionQueue(repoPath);
+  return queue.enqueue(async () => {
+    const nextContext = new Set(currentContext ?? []);
+    nextContext.add(repoPath);
+    return repoExecutionContext.run(nextContext, task);
+  });
+}
 
 // Helper function to execute jj commands
 async function executeJjCommand(repoPath: string, command: string, args: string[]): Promise<void> {
-  console.log(`🚀 Executing: jj ${[command, ...args].join(' ')} in ${repoPath}`);
-  const env = {
-    ...process.env,
-    JJ_EDITOR: process.env.JJ_EDITOR ?? 'true',
-    JJ_UI: process.env.JJ_UI ?? 'text',
-    EDITOR: process.env.EDITOR ?? 'true',
-    VISUAL: process.env.VISUAL ?? process.env.EDITOR ?? 'true',
-    GIT_EDITOR: process.env.GIT_EDITOR ?? 'true',
-  };
-  const t = $({ cwd: repoPath, env })`jj ${[command, ...args]}`;
-  t.stdout.pipe(process.stdout);
-  t.stderr.pipe(process.stderr);
-  await t;
+  await runWithRepoExclusive(repoPath, async () => {
+    console.log(`🚀 Executing: jj ${[command, ...args].join(' ')} in ${repoPath}`);
+    const env = {
+      ...process.env,
+      JJ_EDITOR: process.env.JJ_EDITOR ?? 'true',
+      JJ_UI: process.env.JJ_UI ?? 'text',
+      EDITOR: process.env.EDITOR ?? 'true',
+      VISUAL: process.env.VISUAL ?? process.env.EDITOR ?? 'true',
+      GIT_EDITOR: process.env.GIT_EDITOR ?? 'true',
+    };
+    const t = $({ cwd: repoPath, env })`jj ${[command, ...args]}`;
+    t.stdout.pipe(process.stdout);
+    t.stderr.pipe(process.stderr);
+    await t;
+  });
 }
 
 // Branded string types for type safety
@@ -152,29 +196,33 @@ export function parseJjLog(logOutput: string): Commit[] {
  * Helper function to execute the jj log command and parse its output
  */
 export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> {
-  const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "|" ++ if(conflict, "true", "false") ++ "\\n"';
-  console.log(`📥 Fetching repository commits from ${repoPath}`);
-  console.log(`🔧 Using template: ${template}`);
-  const escapedTemplateForSingleQuotes = template.replace(/'/g, `'\"'\"'`);
-  console.log(`📝 Equivalent shell command:\njj log --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
-  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template}`;
-  console.log('📜 Raw jj log output:\n', stdout);
+  return runWithRepoExclusive(repoPath, async () => {
+    const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "|" ++ if(conflict, "true", "false") ++ "\\n"';
+    console.log(`📥 Fetching repository commits from ${repoPath}`);
+    console.log(`🔧 Using template: ${template}`);
+    const escapedTemplateForSingleQuotes = template.replace(/'/g, `'\"'\"'`);
+    console.log(`📝 Equivalent shell command:\njj log --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
+    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template}`;
+    console.log('📜 Raw jj log output:\n', stdout);
 
-  return parseJjLog(stdout);
+    return parseJjLog(stdout);
+  });
 }
 
 /**
  * Determine the commit that is currently checked out in the workspace.
  */
 export async function getCurrentCommitId(repoPath: string): Promise<CommitId | null> {
-  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r @ --template commit_id`;
-  const commitId = stdout.trim();
+  return runWithRepoExclusive(repoPath, async () => {
+    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r @ --template commit_id`;
+    const commitId = stdout.trim();
 
-  if (commitId === '' || commitId === '0000000000000000000000000000000000000000') {
-    return null;
-  }
+    if (commitId === '' || commitId === '0000000000000000000000000000000000000000') {
+      return null;
+    }
 
-  return createCommitId(commitId);
+    return createCommitId(commitId);
+  });
 }
 
 /**
@@ -232,132 +280,140 @@ export interface OpLogEntry {
  * Get file changes for a specific commit
  */
 export async function getCommitFileChanges(repoPath: string, commitId: CommitId): Promise<FileChange[]> {
-  try {
-    // First get the summary to get proper status
-    const { stdout: summaryOutput } = await $({ cwd: repoPath })`jj diff -r ${commitId} --summary`;
-    const statusMap = new Map<string, FileChange['status']>();
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      // First get the summary to get proper status
+      const { stdout: summaryOutput } = await $({ cwd: repoPath })`jj diff -r ${commitId} --summary`;
+      const statusMap = new Map<string, FileChange['status']>();
 
-    const summaryLines = summaryOutput.trim().split('\n');
-    for (const line of summaryLines) {
-      if (!line.trim()) continue;
-      const statusMatch = line.match(/^([MADRC])\s+(.+)$/);
-      if (statusMatch) {
-        const [, status, path] = statusMatch;
-        statusMap.set(path.trim(), status as FileChange['status']);
+      const summaryLines = summaryOutput.trim().split('\n');
+      for (const line of summaryLines) {
+        if (!line.trim()) continue;
+        const statusMatch = line.match(/^([MADRC])\s+(.+)$/);
+        if (statusMatch) {
+          const [, status, path] = statusMatch;
+          statusMap.set(path.trim(), status as FileChange['status']);
+        }
       }
-    }
 
-    // Use jj diff with --stat to get file change information with statistics
-    const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --stat`;
-    
-    const changes: FileChange[] = [];
-    const lines = stdout.trim().split('\n');
-    
-    for (const line of lines) {
-      if (!line.trim()) continue;
+      // Use jj diff with --stat to get file change information with statistics
+      const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --stat`;
       
-      // Skip the summary line at the end
-      if (line.includes('files changed,')) continue;
+      const changes: FileChange[] = [];
+      const lines = stdout.trim().split('\n');
       
-      // Parse the stat format: "path/to/file | 123 ++++++++++++++----"
-      const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+-]+)$/);
-      if (match) {
-        const [, path, , plusMinus] = match;
-        const additions = (plusMinus.match(/\+/g) || []).length;
-        const deletions = (plusMinus.match(/-/g) || []).length;
-        const trimmedPath = path.trim();
-        const status = statusMap.get(trimmedPath) || 'M';
+      for (const line of lines) {
+        if (!line.trim()) continue;
         
-        changes.push({
-          path: trimmedPath,
-          status,
-          additions,
-          deletions,
-        });
+        // Skip the summary line at the end
+        if (line.includes('files changed,')) continue;
+        
+        // Parse the stat format: "path/to/file | 123 ++++++++++++++----"
+        const match = line.match(/^(.+?)\s+\|\s+(\d+)\s+([+-]+)$/);
+        if (match) {
+          const [, path, , plusMinus] = match;
+          const additions = (plusMinus.match(/\+/g) || []).length;
+          const deletions = (plusMinus.match(/-/g) || []).length;
+          const trimmedPath = path.trim();
+          const status = statusMap.get(trimmedPath) || 'M';
+          
+          changes.push({
+            path: trimmedPath,
+            status,
+            additions,
+            deletions,
+          });
+        }
       }
+      
+      return changes;
+    } catch (error) {
+      return [];
     }
-    
-    return changes;
-  } catch (error) {
-    return [];
-  }
+  });
 }
 
 /**
  * Get total statistics for a commit (additions and deletions)
  */
 export async function getCommitStats(repoPath: string, commitId: CommitId): Promise<{ additions: number; deletions: number }> {
-  try {
-    const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --stat`;
-    const lines = stdout.trim().split('\n');
-    
-    // Find the summary line at the end: "N files changed, X insertions(+), Y deletions(-)"
-    const summaryLine = lines[lines.length - 1];
-    const match = summaryLine.match(/(\d+)\s+insertions?\(\+\),\s+(\d+)\s+deletions?\(-\)/);
-    
-    if (match) {
-      return {
-        additions: parseInt(match[1], 10),
-        deletions: parseInt(match[2], 10),
-      };
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --stat`;
+      const lines = stdout.trim().split('\n');
+      
+      // Find the summary line at the end: "N files changed, X insertions(+), Y deletions(-)"
+      const summaryLine = lines[lines.length - 1];
+      const match = summaryLine.match(/(\d+)\s+insertions?\(\+\),\s+(\d+)\s+deletions?\(-\)/);
+      
+      if (match) {
+        return {
+          additions: parseInt(match[1], 10),
+          deletions: parseInt(match[2], 10),
+        };
+      }
+      
+      return { additions: 0, deletions: 0 };
+    } catch (error) {
+      return { additions: 0, deletions: 0 };
     }
-    
-    return { additions: 0, deletions: 0 };
-  } catch (error) {
-    return { additions: 0, deletions: 0 };
-  }
+  });
 }
 
 /**
  * Get evolution log for a specific commit
  */
 export async function getCommitEvolog(repoPath: string, commitId: CommitId): Promise<EvoLogEntry[]> {
-  try {
-    // Use jj evolog with custom template to get parseable output
-    const template = 'commit.commit_id() ++ "|" ++ commit.description().first_line() ++ "|" ++ operation.id().short() ++ "|" ++ operation.description() ++ "\\n"';
-    const { stdout } = await $({ cwd: repoPath })`jj evolog -r ${commitId} --no-graph --template ${template}`;
-    
-    const entries: EvoLogEntry[] = [];
-    const lines = stdout.trim().split('\n');
-    
-    for (const line of lines) {
-      if (!line.trim()) continue;
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      // Use jj evolog with custom template to get parseable output
+      const template = 'commit.commit_id() ++ "|" ++ commit.description().first_line() ++ "|" ++ operation.id().short() ++ "|" ++ operation.description() ++ "\\n"';
+      const { stdout } = await $({ cwd: repoPath })`jj evolog -r ${commitId} --no-graph --template ${template}`;
       
-      // Parse the pipe-separated format: commitId|description|operationId|operationDescription
-      const parts = line.split('|');
-      if (parts.length >= 4) {
-        const [fullCommitId, description, operationId, operationDescription] = parts;
+      const entries: EvoLogEntry[] = [];
+      const lines = stdout.trim().split('\n');
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
         
-        try {
-          entries.push({
-            commitId: createCommitId(fullCommitId.trim()),
-            description: createDescription(description.trim()),
-            operationId: operationId.trim(),
-            operationDescription: operationDescription.trim(),
-          });
-        } catch (error) {
-          // Skip invalid entries
+        // Parse the pipe-separated format: commitId|description|operationId|operationDescription
+        const parts = line.split('|');
+        if (parts.length >= 4) {
+          const [fullCommitId, description, operationId, operationDescription] = parts;
+          
+          try {
+            entries.push({
+              commitId: createCommitId(fullCommitId.trim()),
+              description: createDescription(description.trim()),
+              operationId: operationId.trim(),
+              operationDescription: operationDescription.trim(),
+            });
+          } catch (error) {
+            // Skip invalid entries
+          }
         }
       }
+      
+      return entries;
+    } catch (error) {
+      return [];
     }
-    
-    return entries;
-  } catch (error) {
-    return [];
-  }
+  });
 }
 
 /**
  * Get the diff for a specific file in a commit
  */
 export async function getFileDiff(repoPath: string, commitId: CommitId, filePath: string): Promise<string> {
-  try {
-    // Use jj diff with --git flag to get unified diff format with +/- signs
-    const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --git ${filePath}`;
-    return stdout;
-  } catch (error) {
-    throw new Error(`Failed to get diff for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      // Use jj diff with --git flag to get unified diff format with +/- signs
+      const { stdout } = await $({ cwd: repoPath })`jj diff -r ${commitId} --git ${filePath}`;
+      return stdout;
+    } catch (error) {
+      throw new Error(`Failed to get diff for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
 }
 
 /**
@@ -521,8 +577,23 @@ export async function executeSplitAtEvolog(
     throw new Error('Cannot split at the current version of the change');
   }
 
-  const { stdout: changeIdOutput } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeCommitId} --template change_id`;
-  const changeId = createChangeId(changeIdOutput.trim());
+  const changeMetadataTemplate = 'change_id ++ "|" ++ parents.map(|p| p.commit_id()).join(",")';
+  const changeMetadataOutput = await runWithRepoExclusive(repoPath, async () => {
+    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeCommitId} --template ${changeMetadataTemplate}`;
+    return stdout;
+  });
+  const [changeIdRaw, parentListRaw = ''] = changeMetadataOutput.trim().split('|');
+  if (!changeIdRaw) {
+    throw new Error(`Unable to determine change ID for commit ${changeCommitId}`);
+  }
+  const changeId = createChangeId(changeIdRaw);
+  const parentCommitIds = parentListRaw
+    .split(',')
+    .map(part => part.trim())
+    .filter(part => part.length > 0)
+    .map(createCommitId);
+  
+  console.log(`🧾 Split-at-evolog metadata: change=${changeId} parents=${parentCommitIds.join(', ') || '(none)'}`);
 
   const evologEntries = await getCommitEvolog(repoPath, changeCommitId);
   const entryExists = evologEntries.some((entry) => entry.commitId === entryCommitId);
@@ -530,18 +601,48 @@ export async function executeSplitAtEvolog(
     throw new Error('Selected evolog entry does not belong to the target change');
   }
 
-  await executeJjCommand(repoPath, 'duplicate', [entryCommitId, '--insert-before', changeCommitId]);
+  const insertAfterArgs = parentCommitIds.flatMap(parentCommitId => ['--insert-after', parentCommitId]);
+  console.log(
+    `🪄 Duplicating evolog entry ${entryCommitId} with targets after=[${parentCommitIds.join(', ') || '(none)'}] before=${changeCommitId}`
+  );
+
+  await executeJjCommand(
+    repoPath,
+    'duplicate',
+    [
+      entryCommitId,
+      ...insertAfterArgs,
+      '--insert-before',
+      changeCommitId
+    ]
+  );
 
   const changeRevset = `change_id(${changeId})`;
-  const { stdout: conflictStatusOutput } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeRevset} --template ${'if(conflict, "true", "false")'}`;
-  const hasConflicts = conflictStatusOutput.trim().split('\n').some((line) => line.trim() === 'true');
+  console.log(`🔍 Checking conflicts for ${changeRevset}`);
+  const conflictStatusOutput = await runWithRepoExclusive(repoPath, async () => {
+    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${changeRevset} --template ${'if(conflict, "true", "false")'}`;
+    return stdout;
+  });
+  console.log(`🧮 Conflict status raw output: ${JSON.stringify(conflictStatusOutput)}`);
+  const conflictTokens = conflictStatusOutput
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(token => token.length > 0);
+  console.log(`📊 Conflict status tokens: ${conflictTokens.join(', ') || '(none)'}`);
+  const hasConflicts = conflictTokens.includes('true');
 
   if (!hasConflicts) {
+    console.log('✅ No conflicts detected after duplicate');
     return;
   }
 
+  console.log(`⚠️ Conflicts detected. Gathering paths for ${changeRevset}`);
   try {
-    const { stdout: conflictListOutput } = await $({ cwd: repoPath })`jj resolve -r ${changeRevset} --list`;
+    const conflictListOutput = await runWithRepoExclusive(repoPath, async () => {
+      const { stdout } = await $({ cwd: repoPath })`jj resolve -r ${changeRevset} --list`;
+      return stdout;
+    });
+    console.log(`📄 Conflict list raw output: ${JSON.stringify(conflictListOutput)}`);
     const conflictPaths = conflictListOutput
       .split('\n')
       .map((line) => line.trim())
@@ -550,12 +651,15 @@ export async function executeSplitAtEvolog(
       .filter((path) => path.length > 0);
 
     if (conflictPaths.length === 0) {
+      console.log('⚠️ Resolve list returned no conflict paths; skipping auto-resolution');
       return;
     }
 
+    console.log(`🛠️ Auto-resolving conflicts via :theirs for paths: ${conflictPaths.join(', ')}`);
     await executeJjCommand(repoPath, 'resolve', ['-r', changeRevset, '--tool', ':theirs', ...conflictPaths]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Error while resolving conflicts for ${changeRevset}: ${message}`);
     if (!message.includes('No conflicts found')) {
       throw error;
     }
@@ -596,75 +700,111 @@ export async function executeRedo(repoPath: string): Promise<void> {
  * Get operation log
  */
 export async function getOperationLog(repoPath: string): Promise<OpLogEntry[]> {
-  try {
-    // Use jj op log with custom template to get parseable output
-    // Fetch both short and full operation IDs for matching
-    const template = 'id.short() ++ "|" ++ id ++ "|" ++ description ++ "|" ++ time.end().format("%Y-%m-%d %H:%M:%S") ++ "|" ++ user ++ "\\n"';
-    const { stdout } = await $({ cwd: repoPath })`jj op log --no-graph --template ${template} --limit 50`;
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      // Use jj op log with custom template to get parseable output
+      // Fetch both short and full operation IDs for matching
+      const template = 'id.short() ++ "|" ++ id ++ "|" ++ description ++ "|" ++ time.end().format("%Y-%m-%d %H:%M:%S") ++ "|" ++ user ++ "\\n"';
+      const { stdout } = await $({ cwd: repoPath })`jj op log --no-graph --template ${template} --limit 50`;
 
-    const entries: OpLogEntry[] = [];
-    const lines = stdout.trim().split('\n');
+      const entries: OpLogEntry[] = [];
+      const lines = stdout.trim().split('\n');
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
+      for (const line of lines) {
+        if (!line.trim()) continue;
 
-      // Parse the pipe-separated format: operationId|fullOperationId|operationDescription|timestamp|user
-      const parts = line.split('|');
-      if (parts.length >= 5) {
-        const [operationId, fullOperationId, operationDescription, timestamp, user] = parts;
+        // Parse the pipe-separated format: operationId|fullOperationId|operationDescription|timestamp|user
+        const parts = line.split('|');
+        if (parts.length >= 5) {
+          const [operationId, fullOperationId, operationDescription, timestamp, user] = parts;
 
-        entries.push({
-          operationId: operationId.trim(),
-          fullOperationId: fullOperationId.trim(),
-          operationDescription: operationDescription.trim(),
-          timestamp: timestamp.trim(),
-          user: user.trim(),
-        });
+          entries.push({
+            operationId: operationId.trim(),
+            fullOperationId: fullOperationId.trim(),
+            operationDescription: operationDescription.trim(),
+            timestamp: timestamp.trim(),
+            user: user.trim(),
+          });
+        }
       }
-    }
 
-    return entries;
-  } catch (error) {
-    console.error('Error fetching operation log:', error);
-    return [];
-  }
+      return entries;
+    } catch (error) {
+      console.error('Error fetching operation log:', error);
+      return [];
+    }
+  });
 }
 
 export async function getDescription(repoPath: string, ref: string): Promise<Description> {
-  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${ref} --template description`;
-  return createDescription(stdout);
+  return runWithRepoExclusive(repoPath, async () => {
+    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${ref} --template description`;
+    return createDescription(stdout);
+  });
 }
 
 export async function currentOpId(repoPath: string) {
-  const { stdout } = await $({ cwd: repoPath })`jj op log -n1 --no-graph -T self.id()`;
-  const opId = stdout.trim();
-  if (!opId) {
-    throw new Error('No current operation');
-  }
-  return opId;
+  return runWithRepoExclusive(repoPath, async () => {
+    const { stdout } = await $({ cwd: repoPath })`jj op log -n1 --no-graph -T self.id()`;
+    const opId = stdout.trim();
+    if (!opId) {
+      throw new Error('No current operation');
+    }
+    return opId;
+  });
 }
 
 export async function* watchRepoChanges(repoPath: string) {
   const jjPath = join(repoPath, '.jj/repo/op_heads/');
 
-  let lastOpHead = await currentOpId(repoPath);
-  const commits = await getRepositoryCommits(repoPath);
-  const currentCommitId = await getCurrentCommitId(repoPath);
-  console.log(`📦 watchRepoChanges initial emit: ${commits.length} commits`);
-  yield { commits, opHead: lastOpHead, currentCommitId };
+  const initialSnapshot = await runWithRepoExclusive(repoPath, async () => {
+    const opHead = await currentOpId(repoPath);
+    const commits = await getRepositoryCommits(repoPath);
+    const currentCommitId = await getCurrentCommitId(repoPath);
+    return { opHead, commits, currentCommitId };
+  });
+
+  let lastOpHead = initialSnapshot.opHead;
+  console.log(`📦 watchRepoChanges initial emit: ${initialSnapshot.commits.length} commits`);
+  yield {
+    commits: initialSnapshot.commits,
+    opHead: lastOpHead,
+    currentCommitId: initialSnapshot.currentCommitId
+  };
   
   for await (const { filename, eventType } of watch(jjPath, { recursive: true })) {
     console.log(`🛎️ Detected ${eventType} on ${filename} in ${jjPath}`);
-    const currentOpHead = await currentOpId(repoPath);
-    if (currentOpHead !== lastOpHead) {
-      console.log(`🔄 Operation head changed from ${lastOpHead} to ${currentOpHead}`);
-      lastOpHead = currentOpHead || '';
+    type WatchUpdate =
+      | { kind: 'unchanged'; currentOpHead: string }
+      | { kind: 'changed'; currentOpHead: string; commits: Commit[]; currentCommitId: CommitId | null };
+
+    const update = await runWithRepoExclusive(repoPath, async (): Promise<WatchUpdate> => {
+      const currentOpHead = await currentOpId(repoPath);
+      if (currentOpHead === lastOpHead) {
+        return { kind: 'unchanged', currentOpHead };
+      }
+
       const commits = await getRepositoryCommits(repoPath);
       const currentCommitId = await getCurrentCommitId(repoPath);
-      console.log(`📦 watchRepoChanges change emit: ${commits.length} commits`);
-      yield { commits, opHead: lastOpHead, currentCommitId };
+      return {
+        kind: 'changed',
+        currentOpHead,
+        commits,
+        currentCommitId
+      };
+    });
+
+    if (update.kind === 'changed') {
+      console.log(`🔄 Operation head changed from ${lastOpHead} to ${update.currentOpHead}`);
+      lastOpHead = update.currentOpHead;
+      console.log(`📦 watchRepoChanges change emit: ${update.commits.length} commits`);
+      yield {
+        commits: update.commits,
+        opHead: lastOpHead,
+        currentCommitId: update.currentCommitId
+      };
     } else {
-      console.log(`ℹ️ Operation head unchanged (${currentOpHead}), no update emitted`);
+      console.log(`ℹ️ Operation head unchanged (${update.currentOpHead}), no update emitted`);
     }
   }
 }
