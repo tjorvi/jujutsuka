@@ -76,9 +76,16 @@ export function useSubscription<Parameters, R>(
       onError: (err: unknown) => void;
       onComplete: () => void }) => { unsubscribe: () => void } },
     input: Parameters,
+    options?: { enabled?: boolean }
 ) {
     const [state, setState] = useState<QueryState<R>>(idle());
+    const enabled = options?.enabled ?? true;
     useEffect(() => {
+        if (!enabled) {
+            setState(idle());
+            return;
+        }
+
         setState(loading());
         const subscription = subscribable.subscribe(input, {
             onData: (data) => {
@@ -98,7 +105,7 @@ export function useSubscription<Parameters, R>(
           subscription.unsubscribe();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [JSON.stringify(input), subscribable]);
+    }, [JSON.stringify(input), subscribable, enabled]);
 
     return state
 }

@@ -276,6 +276,7 @@ function StackComponent({
   const abandonChange = useGraphStore(state => state.abandonChange);
   const checkoutChange = useGraphStore(state => state.checkoutChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
+  const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
   const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
   // Fetch stats for all commits in the stack
@@ -349,6 +350,7 @@ function StackComponent({
         const stats = commitStats[commitId];
         const isEmpty = (!stats || (stats.additions === 0 && stats.deletions === 0)) &&
                         (commit.description === '' || commit.description === '(no description)');
+        const commitBookmarks = bookmarksByCommit[commitId] ?? [];
 
         // Debug logging
         console.log('Commit', commitId.slice(0, 8), {
@@ -358,6 +360,7 @@ function StackComponent({
           hasStats: !!stats,
           additions: stats?.additions,
           deletions: stats?.deletions,
+          bookmarks: commitBookmarks,
         });
 
         const sizeIndicator = stats ? (() => {
@@ -511,6 +514,19 @@ function StackComponent({
                       </div>
                     )}
                   </div>
+                  {commitBookmarks.length > 0 && (
+                    <div className={styles.bookmarkList}>
+                      {commitBookmarks.map((bookmarkName) => {
+                        const badgeLabel = bookmarkName as string;
+                        return (
+                          <span key={badgeLabel} className={styles.bookmarkBadge}>
+                            <span aria-hidden="true">🔖</span>
+                            {badgeLabel}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div style={{ fontSize: '9px', color: '#9ca3af' }}>
                     commit: {commitId.slice(0, 8)}
                   </div>

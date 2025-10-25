@@ -70,11 +70,18 @@ declare const CommitIdBrand: unique symbol;
 declare const ChangeIdBrand: unique symbol;
 declare const EmailBrand: unique symbol;
 declare const DescriptionBrand: unique symbol;
+declare const BookmarkNameBrand: unique symbol;
 
 export type CommitId = string & { readonly [CommitIdBrand]: true };
 export type ChangeId = string & { readonly [ChangeIdBrand]: true };
 export type Email = string & { readonly [EmailBrand]: true };
 export type Description = string & { readonly [DescriptionBrand]: true };
+export type BookmarkName = string & { readonly [BookmarkNameBrand]: true };
+
+export interface Bookmark {
+  name: BookmarkName;
+  commitId: CommitId;
+}
 
 // Transform functions to create branded types
 export function createCommitId(value: string): CommitId {
@@ -114,6 +121,14 @@ export function createDescription(value: string): Description {
     return '(no description)' as Description;
   }
   return trimmed as Description;
+}
+
+export function createBookmarkName(value: string): BookmarkName {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`Invalid bookmark name: "${value}"`);
+  }
+  return trimmed as BookmarkName;
 }
 
 // Parse timestamp from string to Date
@@ -212,16 +227,102 @@ export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> 
 /**
  * Determine the commit that is currently checked out in the workspace.
  */
-export async function getCurrentCommitId(repoPath: string): Promise<CommitId | null> {
-  return runWithRepoExclusive(repoPath, async () => {
-    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r @ --template commit_id`;
-    const commitId = stdout.trim();
+async function resolveCommitId(repoPath: string, rev: string): Promise<CommitId | null> {
+  const { stdout } = await $({ cwd: repoPath })`jj log --no-graph -r ${rev} --template commit_id`;
+  const commitId = stdout.trim();
 
-    if (commitId === '' || commitId === '0000000000000000000000000000000000000000') {
-      return null;
+  if (commitId === '' || commitId === '0000000000000000000000000000000000000000') {
+    return null;
+  }
+
+  return createCommitId(commitId);
+}
+
+export async function getCurrentCommitId(repoPath: string): Promise<CommitId | null> {
+  return runWithRepoExclusive(repoPath, async () => resolveCommitId(repoPath, '@'));
+}
+
+export async function getGitHeadCommitId(repoPath: string): Promise<CommitId | null> {
+  return runWithRepoExclusive(repoPath, async () => resolveCommitId(repoPath, 'git_head()'));
+}
+
+/**
+ * Fetch all bookmarks in the repository
+ */
+export async function getBookmarks(repoPath: string): Promise<Bookmark[]> {
+  return runWithRepoExclusive(repoPath, async () => {
+    if (!repoPath) {
+      return [];
     }
 
-    return createCommitId(commitId);
+    try {
+      const { stdout } = await $({ cwd: repoPath })`jj bookmark list`;
+      const raw = stdout.trim();
+      if (raw === '') {
+        return [];
+      }
+
+      const seen = new Set<string>();
+      const bookmarks: Bookmark[] = [];
+
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+          continue;
+        }
+
+        const firstToken = trimmed.split(/\s+/)[0] ?? '';
+        if (!firstToken) {
+          continue;
+        }
+
+        const nameCandidate = firstToken.replace(/:+$/, '');
+        if (!nameCandidate) {
+          continue;
+        }
+
+        let commitId: CommitId | null = null;
+        const hexMatch = trimmed.match(/[0-9a-f]{6,40}/i);
+        if (hexMatch) {
+          try {
+            commitId = await resolveCommitId(repoPath, hexMatch[0]);
+          } catch (hexError) {
+            console.warn(`Failed to resolve bookmark ${nameCandidate} via hex ${hexMatch[0]}:`, hexError);
+          }
+        }
+
+        if (!commitId) {
+          try {
+            commitId = await resolveCommitId(repoPath, nameCandidate);
+          } catch (nameError) {
+            console.warn(`Failed to resolve bookmark ${nameCandidate} via name:`, nameError);
+            continue;
+          }
+        }
+
+        if (!commitId) {
+          continue;
+        }
+
+        try {
+          const bookmarkName = createBookmarkName(nameCandidate);
+          const key = `${bookmarkName}|${commitId}`;
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          bookmarks.push({ name: bookmarkName, commitId });
+        } catch (parseError) {
+          console.warn(`Skipping bookmark ${nameCandidate} due to parse error:`, parseError);
+        }
+      }
+
+      console.log('🔖 Parsed bookmarks (list only):', bookmarks.map(b => `${b.name}:${b.commitId}`).join(', ') || '(none)');
+      return bookmarks;
+    } catch (error) {
+      console.error('Failed to read bookmarks from repository:', error);
+      return [];
+    }
   });
 }
 
@@ -761,7 +862,30 @@ export async function* watchRepoChanges(repoPath: string) {
     const opHead = await currentOpId(repoPath);
     const commits = await getRepositoryCommits(repoPath);
     const currentCommitId = await getCurrentCommitId(repoPath);
-    return { opHead, commits, currentCommitId };
+    const gitHeadCommitId = await getGitHeadCommitId(repoPath);
+    const bookmarks = await getBookmarks(repoPath);
+    const workspaceBookmarkName = createBookmarkName('@');
+    const gitHeadBookmarkName = createBookmarkName('git_head()');
+
+    if (currentCommitId) {
+      const alreadyPresent = bookmarks.some(b => b.name === workspaceBookmarkName);
+      if (!alreadyPresent) {
+        bookmarks.push({
+          name: workspaceBookmarkName,
+          commitId: currentCommitId,
+        });
+      }
+    }
+    if (gitHeadCommitId) {
+      const alreadyPresent = bookmarks.some(b => b.name === gitHeadBookmarkName);
+      if (!alreadyPresent) {
+        bookmarks.push({
+          name: gitHeadBookmarkName,
+          commitId: gitHeadCommitId,
+        });
+      }
+    }
+    return { opHead, commits, currentCommitId, bookmarks };
   });
 
   let lastOpHead = initialSnapshot.opHead;
@@ -769,28 +893,54 @@ export async function* watchRepoChanges(repoPath: string) {
   yield {
     commits: initialSnapshot.commits,
     opHead: lastOpHead,
-    currentCommitId: initialSnapshot.currentCommitId
+    currentCommitId: initialSnapshot.currentCommitId,
+    bookmarks: initialSnapshot.bookmarks
   };
   
   for await (const { filename, eventType } of watch(jjPath, { recursive: true })) {
     console.log(`🛎️ Detected ${eventType} on ${filename} in ${jjPath}`);
     type WatchUpdate =
       | { kind: 'unchanged'; currentOpHead: string }
-      | { kind: 'changed'; currentOpHead: string; commits: Commit[]; currentCommitId: CommitId | null };
+      | { kind: 'changed'; currentOpHead: string; commits: Commit[]; currentCommitId: CommitId | null; bookmarks: Bookmark[] };
 
-    const update = await runWithRepoExclusive(repoPath, async (): Promise<WatchUpdate> => {
-      const currentOpHead = await currentOpId(repoPath);
-      if (currentOpHead === lastOpHead) {
-        return { kind: 'unchanged', currentOpHead };
-      }
+      const update = await runWithRepoExclusive(repoPath, async (): Promise<WatchUpdate> => {
+        const currentOpHead = await currentOpId(repoPath);
+        if (currentOpHead === lastOpHead) {
+          return { kind: 'unchanged', currentOpHead };
+        }
 
       const commits = await getRepositoryCommits(repoPath);
       const currentCommitId = await getCurrentCommitId(repoPath);
+      const gitHeadCommitId = await getGitHeadCommitId(repoPath);
+      const bookmarks = await getBookmarks(repoPath);
+      const workspaceBookmarkName = createBookmarkName('@');
+      const gitHeadBookmarkName = createBookmarkName('git_head()');
+
+      if (currentCommitId) {
+        const alreadyPresent = bookmarks.some(b => b.name === workspaceBookmarkName);
+        if (!alreadyPresent) {
+          bookmarks.push({
+            name: workspaceBookmarkName,
+            commitId: currentCommitId,
+          });
+        }
+      }
+      if (gitHeadCommitId) {
+        const alreadyPresent = bookmarks.some(b => b.name === gitHeadBookmarkName);
+        if (!alreadyPresent) {
+          bookmarks.push({
+            name: gitHeadBookmarkName,
+            commitId: gitHeadCommitId,
+          });
+        }
+      }
+      console.log('🔖 watchRepoChanges update bookmarks:', bookmarks.map(b => `${b.name}:${b.commitId}`).join(', ') || '(none)');
       return {
         kind: 'changed',
         currentOpHead,
         commits,
-        currentCommitId
+          currentCommitId,
+        bookmarks
       };
     });
 
@@ -801,7 +951,8 @@ export async function* watchRepoChanges(repoPath: string) {
       yield {
         commits: update.commits,
         opHead: lastOpHead,
-        currentCommitId: update.currentCommitId
+        currentCommitId: update.currentCommitId,
+        bookmarks: update.bookmarks
       };
     } else {
       console.log(`ℹ️ Operation head unchanged (${update.currentOpHead}), no update emitted`);

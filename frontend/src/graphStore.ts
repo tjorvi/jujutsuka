@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry } from "../../backend/src/repo-parser";
+import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand } from './commands';
 import { mutations } from './api';
 
@@ -14,6 +14,7 @@ interface GraphState {
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
   divergentChangeIds: ReadonlySet<ChangeId>;
+  bookmarksByCommit: Record<CommitId, readonly BookmarkName[]>;
 
   // Core actions
   setCommitGraph: (commitGraph: CommitGraph) => void;
@@ -21,6 +22,7 @@ interface GraphState {
   setOperationLog: (operationLog: OpLogEntry[]) => void;
   setRepoPath: (repoPath: string) => void;
   setDivergentChangeIds: (changeIds: ReadonlySet<ChangeId>) => void;
+  setBookmarks: (bookmarks: readonly Bookmark[] | undefined) => void;
   executeCommand: (command: IntentionCommand) => Promise<void>;
 
   // Intention-based UI actions
@@ -52,6 +54,7 @@ export const useGraphStore = create<GraphState>()(
       isExecutingCommand: false,
       repoPath: '',
       divergentChangeIds: new Set<ChangeId>(),
+      bookmarksByCommit: {},
 
       // Set fresh data from the server
       setCommitGraph: (commitGraph) => {
@@ -73,6 +76,30 @@ export const useGraphStore = create<GraphState>()(
 
       setDivergentChangeIds: (changeIds) => {
         set({ divergentChangeIds: new Set(changeIds) });
+      },
+
+      setBookmarks: (bookmarks) => {
+        if (!bookmarks || bookmarks.length === 0) {
+          console.log('🔖 setBookmarks: received none');
+          set({ bookmarksByCommit: {} });
+          return;
+        }
+
+        console.log('🔖 setBookmarks: received', bookmarks.length, 'bookmarks');
+        const grouped: Record<string, BookmarkName[]> = Object.create(null);
+        for (const bookmark of bookmarks) {
+          const commitId = bookmark.commitId as string;
+          const existing = grouped[commitId] ?? [];
+          grouped[commitId] = [...existing, bookmark.name];
+        }
+
+        const sortedEntries = Object.entries(grouped).map(([commitId, names]) => {
+          console.log('🔖 setBookmarks: commit', commitId, 'bookmarks', names);
+          const sorted = [...names].sort((a, b) => (a as string).localeCompare(b as string)) as BookmarkName[];
+          return [commitId, sorted] as const;
+        });
+
+        set({ bookmarksByCommit: Object.fromEntries(sortedEntries) as Record<CommitId, readonly BookmarkName[]> });
       },
 
       // Core command execution

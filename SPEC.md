@@ -10,6 +10,8 @@ Drag nodes to re-order
 
 Show node evologs and allow to split there
 
+Show repository bookmarks directly on commit cards so users can see named anchors.
+
 When clicking on changes show the changed files in a panel. Show the evolog below the files.
 
 When clicking on a file in the file list, show the diff in a third panel to the right.

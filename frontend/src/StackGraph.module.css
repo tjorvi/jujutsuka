@@ -199,6 +199,26 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
 }
 
+.bookmarkList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.bookmarkBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
 /* Empty commit + selected (but not current) */
 .commitCard[data-empty="true"][data-selected="true"]:not([data-current="true"]) {
   background: #e0f2fe;

@@ -5,7 +5,7 @@ import { DiffPanel } from './DiffPanel';
 import { Settings } from './Settings';
 import { DragDropProvider } from './DragDropContext';
 import { useState, useEffect } from 'react';
-import type { CommitId } from "../../backend/src/repo-parser";
+import type { CommitId, OpLogEntry } from "../../backend/src/repo-parser";
 import { useGraphData } from './useGraphData';
 import { useGraphStore } from './graphStore';
 import { useDragState } from './useDragState';
@@ -299,7 +299,7 @@ function App() {
                       const groups: Array<{ type: 'single' | 'snapshots'; entries: typeof operationLog }> = [];
                       let currentSnapshotGroup: typeof operationLog = [];
 
-                      operationLog.forEach((entry, idx) => {
+                      operationLog.forEach((entry) => {
                         const isSnapshot = entry.operationDescription === 'snapshot working copy';
                         if (isSnapshot) {
                           currentSnapshotGroup.push(entry);
@@ -360,7 +360,7 @@ function App() {
                         }
                       });
 
-                      function renderOperation(entry: typeof operationLog[0]) {
+                      function renderOperation(entry: OpLogEntry) {
                         const isUndo = entry.operationDescription.startsWith('undo:');
                         const isRedo = entry.operationDescription.startsWith('redo:');
                         const isSnapshot = entry.operationDescription === 'snapshot working copy';

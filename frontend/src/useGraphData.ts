@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useMemo } from 'react';
 import { useSubscription, failed, succeeded, subscriptions, trpc } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
-import type { ChangeId, Commit, CommitId } from '../../backend/src/repo-parser';
+import type { Bookmark, ChangeId, Commit, CommitId } from '../../backend/src/repo-parser';
 
 
 /**
@@ -94,23 +94,29 @@ export function useGraphData() {
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const commitGraph = useGraphStore(state => state.commitGraph);
   const setDivergentChangeIds = useGraphStore(state => state.setDivergentChangeIds);
+  const setBookmarks = useGraphStore(state => state.setBookmarks);
 
-  const commitsSubscription = useSubscription(subscriptions.watchRepoChanges, { repoPath });
+  const commitsSubscription = useSubscription(
+    subscriptions.watchRepoChanges,
+    { repoPath },
+    { enabled: repoPath.trim().length > 0 }
+  );
 
-  const onNewGraph = useEffectEvent((payload: { commits: Commit[]; currentCommitId: CommitId | null }) => {
+  const onNewGraph = useEffectEvent((payload: { commits: Commit[]; currentCommitId: CommitId | null; bookmarks?: Bookmark[] }) => {
     console.log('📊 Syncing query data to store');
     const divergentChangeIds = findDivergentChangeIds(payload.commits);
     const builtGraph = buildCommitGraph(payload.commits);
     setCommitGraph(builtGraph);
     setCurrentCommitId(payload.currentCommitId);
     setDivergentChangeIds(divergentChangeIds);
+    setBookmarks(payload.bookmarks ?? []);
   });
 
   useEffect(() => {
     if (commitsSubscription.kind === 'success') {
       const repo = commitsSubscription.data;
       console.log(`📥 Received ${repo.commits.length} commits from subscription, op head ${repo.opHead}`);
-      onNewGraph({ commits: repo.commits, currentCommitId: repo.currentCommitId });
+      onNewGraph({ commits: repo.commits, currentCommitId: repo.currentCommitId, bookmarks: repo.bookmarks });
 
       // Fetch operation log whenever the repo changes
       if (repoPath) {
