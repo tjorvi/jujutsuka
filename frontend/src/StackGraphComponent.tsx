@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useId } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeId, CommitId, Commit, BookmarkName } from '../../backend/src/repo-parser';
 import type { LayoutStackGraph, ParallelGroup, StackId } from './stackUtils';
 import { draggedChange, draggedFileChange, draggedBookmark, getActiveDragMeta, clearActiveDragMeta } from './useDragDrop';
@@ -165,182 +165,229 @@ function scheduleAfterDragStart(callback: () => void) {
   void Promise.resolve().then(callback);
 }
 
-interface SplitArrowProps {
-  count: number;
-  stackWidth: number;
-  gap: number;
+type MarkerKind = 'inbound' | 'outbound';
+
+const connectorColor = '#6b7280';
+
+interface NormalisedRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly centerX: number;
+  readonly centerY: number;
 }
 
-function SplitArrow({ count, stackWidth, gap }: SplitArrowProps) {
-  const branchCount = Math.max(count, 1);
-  const totalWidth = branchCount * stackWidth + (branchCount - 1) * gap;
-  const height = 56;
-  const topPadding = 8;
-  const bottomPadding = 8;
-  const stemLength = 18;
-  const arrowHeadLength = 12;
-  const strokeWidth = 3;
-  const color = '#f59e0b';
-
-  const centerX = totalWidth / 2;
-  const bottomY = height - bottomPadding;
-  const stemTopY = bottomY - stemLength;
-  const arrowBaseY = topPadding + arrowHeadLength;
-  const curveStrength = Math.max((stemTopY - arrowBaseY) * 0.45, 0);
-
-  const rawMarkerId = useId();
-  const markerId = `split-arrow-${rawMarkerId.replace(/:/g, '')}`;
-
-  const branchCenters = useMemo(
-    () => Array.from({ length: branchCount }, (_, index) => (stackWidth / 2) + index * (stackWidth + gap)),
-    [branchCount, stackWidth, gap],
-  );
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        width: '100%',
-      }}
-    >
-      <svg
-        width={totalWidth}
-        height={height}
-        style={{ overflow: 'visible' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <marker
-            id={markerId}
-            markerWidth="6"
-            markerHeight="6"
-            refX="3"
-            refY="3"
-            orient="0"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,6 L3,0 L6,6" fill={color} />
-          </marker>
-        </defs>
-
-        <line
-          x1={centerX}
-          y1={bottomY}
-          x2={centerX}
-          y2={stemTopY}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-        />
-
-        {branchCenters.map((targetX) => (
-          <path
-            key={targetX}
-            d={[
-              `M ${centerX} ${stemTopY}`,
-              `C ${centerX} ${stemTopY - curveStrength} ${targetX} ${arrowBaseY + curveStrength} ${targetX} ${arrowBaseY}`,
-              `L ${targetX} ${topPadding}`,
-            ].join(' ')}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            markerEnd={`url(#${markerId})`}
-          />
-        ))}
-      </svg>
-    </div>
-  );
+interface MarkerMeasurementState {
+  readonly containerSize: { readonly width: number; readonly height: number } | null;
+  readonly markers: Record<StackId, {
+    readonly inbound?: NormalisedRect;
+    readonly outbound?: NormalisedRect;
+  }>;
 }
 
-interface MergeArrowProps {
-  count: number;
-  stackWidth: number;
-  gap: number;
+interface MarkerHandle {
+  readonly element: SVGSVGElement;
+  readonly observer: ResizeObserver | null;
 }
 
-function MergeArrow({ count, stackWidth, gap }: MergeArrowProps) {
-  const branchCount = Math.max(count, 1);
-  const totalWidth = branchCount * stackWidth + (branchCount - 1) * gap;
-  const height = 56;
-  const topPadding = 8;
-  const bottomPadding = 8;
-  const startVertical = 18;
-  const arrowHeadLength = 12;
-  const strokeWidth = 3;
-  const color = '#10b981';
+interface MarkerRegistryEntry {
+  inbound?: MarkerHandle;
+  outbound?: MarkerHandle;
+}
 
-  const centerX = totalWidth / 2;
-  const bottomY = height - bottomPadding;
-  const startY = bottomY - startVertical;
-  const arrowBaseY = topPadding + arrowHeadLength;
-  const curveStrength = Math.max((startY - arrowBaseY) * 0.45, 0);
+type MarkerRegistry = Map<StackId, MarkerRegistryEntry>;
 
-  const rawMarkerId = useId();
-  const markerId = `merge-arrow-${rawMarkerId.replace(/:/g, '')}`;
+interface MarkerRegistrationResult {
+  readonly getMarkerCallback: (stackId: StackId, kind: MarkerKind) => (node: SVGSVGElement | null) => void;
+  readonly measurements: MarkerMeasurementState;
+  readonly scheduleRemeasure: () => void;
+}
 
-  const branchStarts = useMemo(
-    () => Array.from({ length: branchCount }, (_, index) => (stackWidth / 2) + index * (stackWidth + gap)),
-    [branchCount, stackWidth, gap],
-  );
+function toNormalisedRect(rect: DOMRect, containerRect: DOMRect): NormalisedRect {
+  const offsetX = rect.left - containerRect.left;
+  const offsetY = rect.top - containerRect.top;
+  const width = rect.width;
+  const height = rect.height;
+  return {
+    x: offsetX,
+    y: offsetY,
+    width,
+    height,
+    centerX: offsetX + width / 2,
+    centerY: offsetY + height / 2,
+  };
+}
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        width: '100%',
-      }}
-    >
-      <svg
-        width={totalWidth}
-        height={height}
-        style={{ overflow: 'visible' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <marker
-            id={markerId}
-            markerWidth="6"
-            markerHeight="6"
-            refX="3"
-            refY="3"
-            orient="0"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,6 L3,0 L6,6" fill={color} />
-          </marker>
-        </defs>
+function useMarkerMeasurements(containerRef: React.RefObject<HTMLDivElement | null>): MarkerRegistrationResult {
+  const registryRef = useRef<MarkerRegistry>(new Map());
+  const rafIdRef = useRef<number | null>(null);
+  const callbackCacheRef = useRef<Map<string, (node: SVGSVGElement | null) => void>>(new Map());
+  const [measurements, setMeasurements] = useState<MarkerMeasurementState>({
+    containerSize: null,
+    markers: {},
+  });
 
-        {branchStarts.map((startX) => (
-          <path
-            key={startX}
-            d={[
-              `M ${startX} ${bottomY}`,
-              `L ${startX} ${startY}`,
-              `C ${startX} ${startY - curveStrength} ${centerX} ${arrowBaseY + curveStrength} ${centerX} ${arrowBaseY}`,
-            ].join(' ')}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
+  const disconnectHandle = useCallback((handle: MarkerHandle | undefined) => {
+    if (!handle) {
+      return;
+    }
+    if (handle.observer) {
+      handle.observer.disconnect();
+    }
+  }, []);
 
-        <path
-          d={`M ${centerX} ${arrowBaseY} L ${centerX} ${topPadding}`}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          markerEnd={`url(#${markerId})`}
-        />
-      </svg>
-    </div>
-  );
+  const measureAll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) {
+      setMeasurements((previous) => (previous.containerSize === null && Object.keys(previous.markers).length === 0)
+        ? previous
+        : { containerSize: null, markers: {} });
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const nextMarkers: MarkerMeasurementState['markers'] = {};
+
+    registryRef.current.forEach((entry, stackId) => {
+      const inboundRect = entry.inbound?.element.getBoundingClientRect();
+      const outboundRect = entry.outbound?.element.getBoundingClientRect();
+
+      if (!inboundRect && !outboundRect) {
+        return;
+      }
+
+      nextMarkers[stackId] = {
+        inbound: inboundRect ? toNormalisedRect(inboundRect, containerRect) : undefined,
+        outbound: outboundRect ? toNormalisedRect(outboundRect, containerRect) : undefined,
+      };
+    });
+
+    setMeasurements({
+      containerSize: { width: containerRect.width, height: containerRect.height },
+      markers: nextMarkers,
+    });
+  }, [containerRef]);
+
+  const scheduleRemeasure = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      return;
+    }
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      rafIdRef.current = window.requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        measureAll();
+      });
+      return;
+    }
+    measureAll();
+  }, [measureAll]);
+
+  const registerMarker = useCallback((
+    stackId: StackId,
+    kind: MarkerKind,
+    node: SVGSVGElement | null,
+  ) => {
+    const registry = registryRef.current;
+    const existingEntry = registry.get(stackId);
+    const existingHandle = existingEntry?.[kind];
+
+    if (existingHandle && existingHandle.element === node) {
+      return;
+    }
+
+    if (existingHandle) {
+      disconnectHandle(existingHandle);
+    }
+
+    if (!node) {
+      if (!existingEntry) {
+        return;
+      }
+      const nextEntry: MarkerRegistryEntry = { ...existingEntry };
+      delete nextEntry[kind];
+      if (!nextEntry.inbound && !nextEntry.outbound) {
+        registry.delete(stackId);
+      } else {
+        registry.set(stackId, nextEntry);
+      }
+      scheduleRemeasure();
+      return;
+    }
+
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+        scheduleRemeasure();
+      })
+      : null;
+
+    if (observer) {
+      observer.observe(node);
+    }
+
+    const nextEntry: MarkerRegistryEntry = {
+      ...(existingEntry ?? {}),
+      [kind]: {
+        element: node,
+        observer,
+      } satisfies MarkerHandle,
+    };
+
+    registry.set(stackId, nextEntry);
+    scheduleRemeasure();
+  }, [disconnectHandle, scheduleRemeasure]);
+
+  const getMarkerCallback = useCallback((stackId: StackId, kind: MarkerKind) => {
+    const cacheKey = `${stackId}:${kind}`;
+    const cached = callbackCacheRef.current.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const callback = (node: SVGSVGElement | null) => {
+      registerMarker(stackId, kind, node);
+    };
+    callbackCacheRef.current.set(cacheKey, callback);
+    return callback;
+  }, [registerMarker]);
+
+  useLayoutEffect(() => {
+    scheduleRemeasure();
+  }, [scheduleRemeasure]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      scheduleRemeasure();
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+    };
+  }, [containerRef, scheduleRemeasure]);
+
+  useEffect(() => () => {
+    if (rafIdRef.current !== null) {
+      if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(rafIdRef.current);
+      }
+      rafIdRef.current = null;
+    }
+    registryRef.current.forEach((entry) => {
+      disconnectHandle(entry.inbound);
+      disconnectHandle(entry.outbound);
+    });
+    registryRef.current.clear();
+    callbackCacheRef.current.clear();
+  }, [disconnectHandle]);
+
+  return {
+    getMarkerCallback,
+    measurements,
+    scheduleRemeasure,
+  };
 }
 
 interface ConnectionComponentProps {
@@ -351,16 +398,20 @@ interface ConnectionComponentProps {
   };
 }
 
-function ConnectionComponent({ connection }: ConnectionComponentProps) {
-  const getConnectionColor = (type: string) => {
-    switch (type) {
-      case 'merge': return '#ef4444';
-      case 'branch': return '#f59e0b';
-      case 'linear': return '#3b82f6';
-      default: return '#6b7280';
-    }
-  };
+function getConnectionColor(type: 'linear' | 'merge' | 'branch'): string {
+  switch (type) {
+    case 'merge':
+      return '#ef4444';
+    case 'branch':
+      return '#f59e0b';
+    case 'linear':
+      return '#3b82f6';
+    default:
+      return '#6b7280';
+  }
+}
 
+function ConnectionComponent({ connection }: ConnectionComponentProps) {
   return (
     <div
       style={{
@@ -385,6 +436,83 @@ function ConnectionComponent({ connection }: ConnectionComponentProps) {
   );
 }
 
+interface ArrowOverlayProps {
+  readonly containerSize: MarkerMeasurementState['containerSize'];
+  readonly markers: MarkerMeasurementState['markers'];
+  readonly connections: LayoutStackGraph['connections'];
+}
+
+function ArrowOverlay({ containerSize, markers, connections }: ArrowOverlayProps) {
+  if (!containerSize) {
+    return null;
+  }
+
+  const { width, height } = containerSize;
+  const strokeColor = connectorColor;
+
+  const usableConnections = connections
+    .map((connection) => {
+      const outbound = markers[connection.from]?.outbound;
+      const inbound = markers[connection.to]?.inbound;
+      if (!outbound || !inbound) {
+        return null;
+      }
+
+      const outboundX = outbound.centerX;
+      const outboundY = outbound.centerY;
+      const inboundX = inbound.centerX;
+      const inboundY = inbound.y + inbound.height;
+
+      const midControl = Math.max(Math.abs(inboundY - outboundY) * 0.35, 24);
+      const controlYOffset = outboundY <= inboundY
+        ? midControl
+        : -midControl;
+
+      const path = [
+        `M ${outboundX} ${outboundY}`,
+        `C ${outboundX} ${outboundY + controlYOffset}`,
+        `${inboundX} ${inboundY - controlYOffset}`,
+        `${inboundX} ${inboundY}`,
+      ].join(' ');
+
+      return {
+        key: `${connection.from}->${connection.to}`,
+        path,
+        type: connection.type,
+      };
+    })
+    .filter((value): value is { key: string; path: string; type: 'linear' | 'merge' | 'branch' } => value !== null);
+
+  if (usableConnections.length === 0) {
+    return null;
+  }
+
+  return (
+    <svg
+      width={width}
+      height={height}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        overflow: 'visible',
+      }}
+    >
+      {usableConnections.map((connection) => (
+        <path
+          key={connection.key}
+          d={connection.path}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+    </svg>
+  );
+}
+
 export function StackGraphComponent({
   stackGraph,
   commitGraph,
@@ -400,6 +528,9 @@ export function StackGraphComponent({
   divergentChangeIds: ReadonlySet<ChangeId>;
   onCommitSelect: (commitId: CommitId) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { getMarkerCallback, measurements, scheduleRemeasure } = useMarkerMeasurements(containerRef);
+
   useEffect(() => {
     console.log('📊 StackGraphComponent received new commitGraph with keys:', Object.keys(commitGraph));
   }, [commitGraph]);
@@ -475,6 +606,10 @@ export function StackGraphComponent({
     return levels;
   }, [stacks, rootStacks, stackToGroup, parallelGroups]);
 
+  useEffect(() => {
+    scheduleRemeasure();
+  }, [layoutLevels, scheduleRemeasure]);
+
   const handleRootDragStart = (event: React.DragEvent<HTMLDivElement>) => {
     const rootElement = event.currentTarget;
     applyRootDragState(rootElement, { active: true, meta: { kind: 'unknown' } });
@@ -549,6 +684,7 @@ export function StackGraphComponent({
 
       <div
         data-scroll-container
+        ref={containerRef}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -558,6 +694,11 @@ export function StackGraphComponent({
           position: 'relative',
         }}
       >
+        <ArrowOverlay
+          containerSize={measurements.containerSize}
+          markers={measurements.markers}
+          connections={connections}
+        />
         {layoutLevels.slice().reverse().map((level, levelIndex) => {
           const actualLevelIndex = layoutLevels.length - 1 - levelIndex;
           const isLastLevel = levelIndex === layoutLevels.length - 1;
@@ -592,7 +733,7 @@ export function StackGraphComponent({
                         flexShrink: 0,
                       }}
                     >
-                      <OutboundMarker />
+                      <OutboundMarker assign={getMarkerCallback(item.stackId, 'outbound')} />
                       <StackComponent
                         stack={stack}
                         commitGraph={commitGraph}
@@ -602,50 +743,19 @@ export function StackGraphComponent({
                         divergentChangeIds={divergentChangeIds}
                         onCommitSelect={handleCommitSelect}
                       />
-                      <InboundMarker />
+                      <InboundMarker assign={getMarkerCallback(item.stackId, 'inbound')} />
                     </div>
                   );
                 })}
               </div>
 
-              {!isLastLevel && (() => {
-                const nextLevel = layoutLevels[layoutLevels.length - levelIndex - 2];
-                const currentCount = level.length;
-                const nextCount = nextLevel.length;
-                const isSplit = currentCount > 1 && nextCount === 1;
-                const isMerge = currentCount === 1 && nextCount > 1;
-
-                const stackWidth = 220;
-                const gap = 40;
-
-                if (isMerge) {
-                  return <MergeArrow count={nextCount} stackWidth={stackWidth} gap={gap} />;
-                }
-
-                if (isSplit) {
-                  return <SplitArrow count={currentCount} stackWidth={stackWidth} gap={gap} />;
-                }
-
-                return (
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      padding: '8px 0',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '24px',
-                        color: '#3b82f6',
-                      }}
-                    >
-                      ↑
-                    </div>
-                  </div>
-                );
-              })()}
+              {!isLastLevel && (
+                <div
+                  style={{
+                    height: '24px',
+                  }}
+                />
+              )}
             </div>
           );
         })}
@@ -717,10 +827,13 @@ export function StackGraphComponent({
   );
 }
 
+interface StackMarkerProps {
+  readonly assign: (node: SVGSVGElement | null) => void;
+}
 
-function InboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
+function InboundMarker({ assign }: StackMarkerProps) {
   return <svg
-    ref={ref}
+    ref={assign}
     width="12"
     height="12"
     style={{
@@ -728,13 +841,13 @@ function InboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
       margin: '0 auto',
     }}
   >
-    <path d="M0,12 L6,0 L12,12" fill="black" />
+    <path d="M0,12 L6,0 L12,12" fill={connectorColor} />
   </svg>;
 }
 
-function OutboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
+function OutboundMarker({ assign }: StackMarkerProps) {
   return <svg
-    ref={ref}
+    ref={assign}
     width="12"
     height="12"
     style={{
@@ -742,7 +855,6 @@ function OutboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
       margin: '0 auto',
     }}
   >
-    <circle r="2" cx="6" cy="6" fill="black" />
+    <circle r="2" cx="6" cy="6" fill={connectorColor} />
   </svg>;
 }
-
