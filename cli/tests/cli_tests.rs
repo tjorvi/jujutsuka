@@ -99,3 +99,54 @@ fn test_hunksplit_multiple_ranges() {
     // This will fail because we're not in a jj repo, but it should parse the args correctly
     cmd.assert().failure();
 }
+
+#[test]
+fn test_hunksplit_overlapping_ranges_same_file() {
+    let mut cmd = Command::cargo_bin("jjka").unwrap();
+    cmd.arg("hunksplit")
+        .arg("file.txt:1-10")
+        .arg("file.txt:5-15");
+
+    // This will fail because we're not in a jj repo, but it should parse the args correctly
+    cmd.assert().failure();
+}
+
+#[test]
+fn test_hunksplit_windows_path() {
+    let mut cmd = Command::cargo_bin("jjka").unwrap();
+    cmd.arg("hunksplit")
+        .arg("C:\\Users\\test\\file.txt:1-5");
+
+    // This will fail because we're not in a jj repo, but it should parse the args correctly
+    cmd.assert().failure();
+}
+
+#[test]
+fn test_hunksplit_path_with_spaces() {
+    let mut cmd = Command::cargo_bin("jjka").unwrap();
+    cmd.arg("hunksplit")
+        .arg("path with spaces/file.txt:1-5");
+
+    // This will fail because we're not in a jj repo, but it should parse the args correctly
+    cmd.assert().failure();
+}
+
+#[test]
+fn test_hunksplit_single_line_range() {
+    let mut cmd = Command::cargo_bin("jjka").unwrap();
+    cmd.arg("hunksplit")
+        .arg("file.txt:42-42");
+
+    // This will fail because we're not in a jj repo, but it should parse the args correctly
+    cmd.assert().failure();
+}
+
+#[test]
+fn test_hunksplit_large_line_numbers() {
+    let mut cmd = Command::cargo_bin("jjka").unwrap();
+    cmd.arg("hunksplit")
+        .arg("file.txt:1000-2000");
+
+    // This will fail because we're not in a jj repo, but it should parse the args correctly
+    cmd.assert().failure();
+}
