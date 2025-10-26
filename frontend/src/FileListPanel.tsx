@@ -76,6 +76,8 @@ export function FileListPanel({
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
   const addBookmark = useGraphStore(state => state.addBookmark);
+  const deleteBookmark = useGraphStore(state => state.deleteBookmark);
+  const abandonChange = useGraphStore(state => state.abandonChange);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [newBookmarkName, setNewBookmarkName] = useState('');
@@ -445,6 +447,45 @@ export function FileListPanel({
         )}
       </div>
 
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        <label style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+        }}>
+          Actions
+        </label>
+        <button
+          onClick={() => {
+            if (!selectedCommitId) {
+              return;
+            }
+            void abandonChange(selectedCommitId);
+          }}
+          disabled={!selectedCommitId || isExecutingCommand}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '6px 12px',
+            borderRadius: '4px',
+            border: '1px solid #ef4444',
+            background: (!selectedCommitId || isExecutingCommand) ? '#fee2e2' : '#ef4444',
+            color: (!selectedCommitId || isExecutingCommand) ? '#9ca3af' : '#ffffff',
+            cursor: (!selectedCommitId || isExecutingCommand) ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            fontWeight: 500,
+          }}
+          title="Abandon this change"
+        >
+          Abandon change
+        </button>
+      </div>
+
       <div className={styles.bookmarkSection}>
         <label style={{
           fontSize: '12px',
@@ -458,10 +499,25 @@ export function FileListPanel({
           <div className={styles.bookmarkList}>
             {selectedCommitBookmarks.map((bookmark) => {
               const label = bookmark as unknown as string;
+              const isSyntheticBookmark = syntheticBookmarkNames.has(label);
               return (
                 <span key={label} className={styles.bookmarkBadge}>
                   <span aria-hidden="true">🔖</span>
                   {label}
+                  {!isSyntheticBookmark && (
+                    <button
+                      type="button"
+                      className={styles.bookmarkRemoveButton}
+                      onClick={() => {
+                        void deleteBookmark(bookmark);
+                      }}
+                      disabled={isExecutingCommand}
+                      title={`Remove bookmark ${label}`}
+                      aria-label={`Remove bookmark ${label}`}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </span>
               );
             })}

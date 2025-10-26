@@ -278,11 +278,9 @@ function StackComponent({
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const repoPath = useGraphStore(state => state.repoPath);
-  const abandonChange = useGraphStore(state => state.abandonChange);
   const checkoutChange = useGraphStore(state => state.checkoutChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
-  const deleteBookmark = useGraphStore(state => state.deleteBookmark);
   const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
   // Fetch stats for all commits in the stack
@@ -540,21 +538,6 @@ function StackComponent({
                           >
                             <span aria-hidden="true">🔖</span>
                             {badgeLabel}
-                            {!synthetic && (
-                              <button
-                                type="button"
-                                className={styles.bookmarkRemoveButton}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  event.preventDefault();
-                                  void deleteBookmark(bookmarkName);
-                                }}
-                                title="Remove bookmark"
-                                aria-label={`Remove bookmark ${badgeLabel}`}
-                              >
-                                ×
-                              </button>
-                            )}
                           </span>
                         );
                       })}
@@ -590,18 +573,6 @@ function StackComponent({
                     title={isCurrent ? 'This change is already checked out' : 'Check out this change into the workspace'}
                   >
                     {isCurrent ? 'Checked out' : 'Check out'}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.commitActionButton}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      void abandonChange(commitId);
-                    }}
-                    disabled={isExecutingCommand}
-                  >
-                    Abandon
                   </button>
                 </div>
               </div>

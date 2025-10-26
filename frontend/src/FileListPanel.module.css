@@ -69,6 +69,22 @@
   padding: 1px 4px;
 }
 
+.bookmarkRemoveButton {
+  border: none;
+  background: transparent;
+  color: #b45309;
+  cursor: pointer;
+  font-size: 9px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.bookmarkRemoveButton:disabled {
+  cursor: not-allowed;
+  color: #d1d5db;
+  text-decoration: none;
+}
+
 .bookmarkForm {
   display: flex;
   gap: 8px;
