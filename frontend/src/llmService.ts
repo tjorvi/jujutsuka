@@ -83,6 +83,32 @@ class LLMService {
 
     return this.complete(messages, { maxTokens: 1000 });
   }
+
+  async explainDiffHunk(
+    filePath: string,
+    hunk: { readonly header: string; readonly lines: readonly string[] },
+  ): Promise<string> {
+    const diffSnippet = [hunk.header, ...hunk.lines].join('\n');
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'You are a senior engineer helping a teammate understand a diff hunk.',
+          'Provide a concise explanation that covers:',
+          '- What behavior changed',
+          '- Why the change matters or what it likely fixes/enables',
+          '- Any notable risks or follow-up considerations',
+          'Keep the response under 120 words.',
+        ].join('\n'),
+      },
+      {
+        role: 'user',
+        content: `Explain this diff hunk from ${filePath}:\n\n${diffSnippet}`,
+      },
+    ];
+
+    return this.complete(messages, { maxTokens: 500 });
+  }
 }
 
 export const llmService = new LLMService();

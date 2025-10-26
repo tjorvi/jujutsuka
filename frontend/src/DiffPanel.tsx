@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { queries, useQuery } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useGraphStore } from './graphStore';
 import { DiffHunk, DiffLine } from './DiffHunk';
 import { groupDiffIntoHunks } from './diffParsing';
+import { llmService } from './llmService';
 
 interface DiffPanelDataSource {
   readonly fileChanges: (
@@ -68,6 +69,7 @@ function getStatusColor(status: string) {
 
 interface DiffContentOptions {
   readonly attachToHeader?: boolean;
+  readonly onExplain?: (input: { readonly header: string; readonly lines: readonly string[] }) => Promise<string>;
 }
 
 function renderDiffContent(diff: string, options?: DiffContentOptions) {
@@ -95,6 +97,7 @@ function renderDiffContent(diff: string, options?: DiffContentOptions) {
           header={hunk.header}
           lines={hunk.lines}
           defaultExpanded={index === 0}
+          onExplain={options?.onExplain}
         />
       ))}
       {metadata.length === 0 && hunks.length === 0 && (
@@ -108,6 +111,11 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = 
   const repoPath = useGraphStore(state => state.repoPath);
   const [allFileDiffs, setAllFileDiffs] = useState<FileDiffData[]>([]);
   const [loadingAllDiffs, setLoadingAllDiffs] = useState(false);
+  const explainHunk = useCallback(
+    (filePath: string) => (input: { readonly header: string; readonly lines: readonly string[] }) =>
+      llmService.explainDiffHunk(filePath, input),
+    [],
+  );
 
   // Fetch file changes when showing unified view
   const fileChanges = useQuery(
@@ -355,7 +363,10 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = 
                 )}
 
                 {!fileDiff.loading && !fileDiff.error && (
-                  renderDiffContent(fileDiff.diff, { attachToHeader: true })
+                  renderDiffContent(fileDiff.diff, {
+                    attachToHeader: true,
+                    onExplain: explainHunk(fileDiff.path),
+                  })
                 )}
               </div>
             ))}
@@ -413,7 +424,9 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = 
 
       {fileDiff.kind === 'success' && (
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {renderDiffContent(String(fileDiff.data))}
+          {renderDiffContent(String(fileDiff.data), {
+            onExplain: selectedFilePath ? explainHunk(selectedFilePath) : undefined,
+          })}
         </div>
       )}
     </div>
