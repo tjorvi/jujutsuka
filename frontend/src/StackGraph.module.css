@@ -24,11 +24,13 @@
   transition: all 0.2s ease;
 }
 
-body[data-dragging="true"] .dropZoneBranch {
+body[data-dragging="true"] .dropZoneBranch,
+[data-stack-graph-root][data-drag-active="true"] .dropZoneBranch {
   opacity: 0.9;
 }
 
-body[data-dragging="true"] .dropZoneBranch[data-over="true"] {
+body[data-dragging="true"] .dropZoneBranch[data-over="true"],
+[data-stack-graph-root][data-drag-active="true"] .dropZoneBranch[data-over="true"] {
   opacity: 1;
   background: #10b981;
 }
@@ -50,12 +52,14 @@ body[data-dragging="true"] .dropZoneBranch[data-over="true"] {
   transition: all 0.2s ease;
 }
 
-body[data-dragging="true"] .dropZoneLinear {
+body[data-dragging="true"] .dropZoneLinear,
+[data-stack-graph-root][data-drag-active="true"] .dropZoneLinear {
   opacity: 0.3;
   pointer-events: auto;
 }
 
-body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
+body[data-dragging="true"] .dropZoneLinear[data-over="true"],
+[data-stack-graph-root][data-drag-active="true"] .dropZoneLinear[data-over="true"] {
   opacity: 1;
   background: #10b981;
   border: 2px dashed #059669;
@@ -125,7 +129,7 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
 }
 
 /* Hovered state with commit being dragged (squash target) */
-.commitCard[data-hovered="true"][data-commit-dragging="true"] {
+[data-stack-graph-root][data-drag-kind="change"] .commitCard[data-hovered="true"]:not([data-being-dragged="true"]) {
   background: #fef3c7;
   border: 2px solid #f59e0b;
   transform: scale(1.02);
@@ -133,21 +137,21 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
 }
 
 /* Hovered state with file being dragged (file drop target) */
-.commitCard[data-hovered="true"][data-file-dragging="true"] {
+[data-stack-graph-root][data-drag-kind="file-change"] .commitCard[data-hovered="true"],
+[data-stack-graph-root][data-drag-kind="external-file"] .commitCard[data-hovered="true"] {
   background: #dcfce7;
   border: 2px solid #16a34a;
   transform: scale(1.02);
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
 }
 
-/* Commit drop target (not hovered, but could be dropped on) */
-.commitCard[data-commit-drop-target="true"] {
+[data-stack-graph-root][data-drag-kind="change"] .commitCard:not([data-being-dragged="true"]):not([data-hovered="true"]):not([data-selected="true"]):not([data-current="true"]):not([data-conflict="true"]) {
   border: 1px dashed #f59e0b;
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
 }
 
-/* File drag target (not hovered, but a file is being dragged) */
-.commitCard[data-file-drag-target="true"] {
+[data-stack-graph-root][data-drag-kind="file-change"] .commitCard:not([data-being-dragged="true"]):not([data-hovered="true"]):not([data-selected="true"]):not([data-current="true"]):not([data-conflict="true"]),
+[data-stack-graph-root][data-drag-kind="external-file"] .commitCard:not([data-being-dragged="true"]):not([data-hovered="true"]):not([data-selected="true"]):not([data-current="true"]):not([data-conflict="true"]) {
   border: 1px solid #10b981;
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
@@ -294,6 +298,7 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"] {
   transition: opacity 0.2s ease;
 }
 
-.stackContainer[data-file-dragging="true"] {
+[data-stack-graph-root][data-drag-kind="file-change"] .stackContainer,
+[data-stack-graph-root][data-drag-kind="external-file"] .stackContainer {
   opacity: 0.8;
 }

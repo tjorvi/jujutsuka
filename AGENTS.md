@@ -18,6 +18,11 @@
 - Prefer explicitness
 - Use mutable state in any form as little as possible
 
+# Code organisation
+- File per component
+- No unnecessary exports
+- Use `export const forTests = { ... }` if there's a need to export something only for testing purposes.
+
 ## Favoured libraries
 - ts-pattern
 - zod

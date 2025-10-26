@@ -16,8 +16,6 @@ interface CommitStats {
   deletions: number;
 }
 
-type HoverStateUpdater = (commitId: CommitId | null) => void;
-
 const syntheticBookmarkNames = new Set<BookmarkName>(['@' as BookmarkName, 'git_head()' as BookmarkName]);
 
 function isSyntheticBookmark(bookmarkName: BookmarkName): boolean {
@@ -71,28 +69,19 @@ interface ChangeCardProps {
   commitId: CommitId;
   commit: Commit;
   stats: CommitStats | undefined;
-  draggedCommitId: CommitId | null;
-  hoveredCommitId: CommitId | null;
-  isDraggingFile: boolean;
   isInParallelGroup: boolean;
   isSelected: boolean;
   isCurrent: boolean;
   isDivergent: boolean;
   isEmpty: boolean;
-  bookmarks: BookmarkName[];
+  bookmarks: readonly BookmarkName[];
   onCommitSelect: (commitId: CommitId) => void;
-  setHoveredCommitId: HoverStateUpdater;
-  setIsDraggingFile: (value: boolean) => void;
-  setDraggedCommitId: (commitId: CommitId | null) => void;
 }
 
 export function ChangeCard({
   commitId,
   commit,
   stats,
-  draggedCommitId,
-  hoveredCommitId,
-  isDraggingFile,
   isInParallelGroup,
   isSelected,
   isCurrent,
@@ -100,32 +89,24 @@ export function ChangeCard({
   isEmpty,
   bookmarks,
   onCommitSelect,
-  setHoveredCommitId,
-  setIsDraggingFile,
-  setDraggedCommitId,
 }: ChangeCardProps) {
   const { handleFileDrop, handleCommitDrop, handleBookmarkDrop } = useDragDrop();
 
-  const isHovered = hoveredCommitId === commitId;
-  const isBeingDragged = draggedCommitId === commitId;
-  const isCommitDragActive = draggedCommitId !== null;
-  const isOtherCommitBeingDragged = isCommitDragActive && !isBeingDragged;
-  const isFileDragActive = isDraggingFile && !isCommitDragActive;
-  const isFileDropTarget = isFileDragActive && !isHovered;
+  const [isHovered, setIsHovered] = useState(false);
+  const [isBeingDragged, setIsBeingDragged] = useState(false);
 
   const sizeIndicator = useMemo(() => getCommitSizeIndicator(stats), [stats]);
 
   const handleDragStart = (event: React.DragEvent) => {
     event.stopPropagation();
-    setDraggedCommitId(commitId);
+    setIsBeingDragged(true);
     const changeId = commit.changeId as ChangeId;
     dragChange(event, { source: 'change', changeId, commitId });
   };
 
   const handleDragEnd = () => {
-    setDraggedCommitId(null);
-    setHoveredCommitId(null);
-    setIsDraggingFile(false);
+    setIsBeingDragged(false);
+    setIsHovered(false);
   };
 
   const handleDrop = (event: React.DragEvent) => {
@@ -136,8 +117,7 @@ export function ChangeCard({
     event.preventDefault();
     event.stopPropagation();
 
-    setHoveredCommitId(null);
-    setIsDraggingFile(false);
+    setIsHovered(false);
 
     const fileChange = draggedFileChange(event);
     const change = draggedChange(event);
@@ -173,10 +153,7 @@ export function ChangeCard({
     }
     event.preventDefault();
     event.stopPropagation();
-    setHoveredCommitId(commitId);
-    if (event.dataTransfer.types.includes('application/json')) {
-      setIsDraggingFile(true);
-    }
+    setIsHovered(true);
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
@@ -187,7 +164,7 @@ export function ChangeCard({
     event.stopPropagation();
     const nextTarget = event.relatedTarget as Node | null;
     if (!event.currentTarget.contains(nextTarget)) {
-      setHoveredCommitId(null);
+      setIsHovered(false);
     }
   };
 
@@ -208,10 +185,6 @@ export function ChangeCard({
         data-current={isCurrent ? 'true' : 'false'}
         data-being-dragged={isBeingDragged ? 'true' : 'false'}
         data-hovered={isHovered && !isSelected ? 'true' : 'false'}
-        data-commit-dragging={isOtherCommitBeingDragged ? 'true' : 'false'}
-        data-file-dragging={isFileDragActive ? 'true' : 'false'}
-        data-commit-drop-target={isOtherCommitBeingDragged && !isHovered ? 'true' : 'false'}
-        data-file-drag-target={isFileDropTarget ? 'true' : 'false'}
         data-parallel={isInParallelGroup ? 'true' : 'false'}
         data-conflict={commit.hasConflicts ? 'true' : 'false'}
         data-divergent={isDivergent ? 'true' : 'false'}
@@ -419,4 +392,3 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
     </div>
   );
 }
-
