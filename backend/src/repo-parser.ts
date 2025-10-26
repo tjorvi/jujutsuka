@@ -1,7 +1,7 @@
 import { $ } from 'execa';
 import { match } from 'ts-pattern';
 import { join } from 'node:path';
-import { watch } from 'node:fs/promises';
+import { watch, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -514,6 +514,184 @@ export async function getFileDiff(repoPath: string, commitId: CommitId, filePath
     } catch (error) {
       throw new Error(`Failed to get diff for ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  });
+}
+
+/**
+ * Hunk range specification for splitting commits by line ranges
+ */
+export interface HunkRange {
+  filePath: string;
+  startLine: number; // 1-indexed, inclusive
+  endLine: number;   // 1-indexed, inclusive
+}
+
+/**
+ * Parse a hunk range string in the format "path:start-end"
+ */
+export function parseHunkRange(rangeStr: string): HunkRange {
+  const parts = rangeStr.split(':');
+  if (parts.length < 2) {
+    throw new Error(`Invalid hunk range format: ${rangeStr}. Expected format: path:start-end`);
+  }
+
+  // Handle paths with colons (like Windows paths C:\...)
+  const rangePart = parts[parts.length - 1];
+  const filePath = parts.slice(0, -1).join(':');
+
+  const lineNumbers = rangePart.split('-');
+  if (lineNumbers.length !== 2) {
+    throw new Error(`Invalid line range format: ${rangePart}. Expected format: start-end`);
+  }
+
+  const startLine = parseInt(lineNumbers[0], 10);
+  const endLine = parseInt(lineNumbers[1], 10);
+
+  if (isNaN(startLine) || isNaN(endLine)) {
+    throw new Error(`Invalid line numbers in range: ${rangePart}`);
+  }
+
+  if (startLine < 1 || endLine < 1) {
+    throw new Error(`Line numbers must be >= 1, got: ${startLine}-${endLine}`);
+  }
+
+  if (startLine > endLine) {
+    throw new Error(`Start line must be <= end line, got: ${startLine}-${endLine}`);
+  }
+
+  return { filePath, startLine, endLine };
+}
+
+/**
+ * Get file content from a specific commit
+ */
+export async function getFileContent(repoPath: string, commitId: CommitId, filePath: string): Promise<string> {
+  return runWithRepoExclusive(repoPath, async () => {
+    try {
+      const { stdout } = await $({ cwd: repoPath })`jj file show -r ${commitId} ${filePath}`;
+      return stdout;
+    } catch (error) {
+      throw new Error(`Failed to get file content for ${filePath} at ${commitId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+}
+
+/**
+ * Extract specified line ranges from content
+ */
+function extractLineRanges(content: string, ranges: HunkRange[]): string {
+  const lines = content.split('\n');
+  const selectedLines = new Set<number>();
+
+  // Mark all lines that should be included
+  for (const range of ranges) {
+    for (let i = range.startLine - 1; i < range.endLine && i < lines.length; i++) {
+      selectedLines.add(i);
+    }
+  }
+
+  // Extract selected lines
+  const result = lines.filter((_, index) => selectedLines.has(index));
+  return result.join('\n');
+}
+
+/**
+ * Extract the complement of specified line ranges from content
+ */
+function extractComplementLineRanges(content: string, ranges: HunkRange[]): string {
+  const lines = content.split('\n');
+  const excludedLines = new Set<number>();
+
+  // Mark all lines that should be excluded
+  for (const range of ranges) {
+    for (let i = range.startLine - 1; i < range.endLine && i < lines.length; i++) {
+      excludedLines.add(i);
+    }
+  }
+
+  // Extract non-excluded lines
+  const result = lines.filter((_, index) => !excludedLines.has(index));
+  return result.join('\n');
+}
+
+/**
+ * Execute hunk split by line ranges
+ * This splits specific line ranges from a commit into a new commit
+ */
+export async function executeHunkSplit(
+  repoPath: string,
+  sourceCommitId: CommitId,
+  hunkRanges: HunkRange[],
+  target: CommandTarget,
+  description?: string
+): Promise<void> {
+  console.log(`✂️ Executing hunk split: ${sourceCommitId} ranges: ${hunkRanges.map(r => `${r.filePath}:${r.startLine}-${r.endLine}`).join(', ')} to ${JSON.stringify(target)}`);
+
+  // Group ranges by file
+  const rangesByFile = new Map<string, HunkRange[]>();
+  for (const range of hunkRanges) {
+    const existing = rangesByFile.get(range.filePath) || [];
+    existing.push(range);
+    rangesByFile.set(range.filePath, existing);
+  }
+
+  await runWithRepoExclusive(repoPath, async () => {
+    // Step 1: Get the original file contents from the source commit
+    const fileContents = new Map<string, string>();
+    for (const filePath of rangesByFile.keys()) {
+      const content = await getFileContent(repoPath, sourceCommitId, filePath);
+      fileContents.set(filePath, content);
+    }
+
+    // Step 2: First, modify the source commit to have only the remaining content
+    await executeJjCommand(repoPath, 'edit', ['-r', sourceCommitId]);
+
+    for (const [filePath, content] of fileContents.entries()) {
+      const ranges = rangesByFile.get(filePath)!;
+      const remainingContent = extractComplementLineRanges(content, ranges);
+      const fullPath = join(repoPath, filePath);
+
+      if (remainingContent.trim() === '') {
+        // If no content remains, delete the file
+        await executeJjCommand(repoPath, 'file', ['untrack', filePath]);
+      } else {
+        await writeFile(fullPath, remainingContent);
+      }
+    }
+
+    // Step 3: Create a new empty commit at the target location
+    const newArgs: string[] = [];
+    if (target.type === 'before') {
+      newArgs.push('--insert-before', target.commitId);
+    } else if (target.type === 'after') {
+      newArgs.push('--insert-after', target.commitId);
+    } else if (target.type === 'new-commit-between') {
+      newArgs.push('--insert-after', target.beforeCommitId);
+      if (target.afterCommitId !== sourceCommitId) {
+        newArgs.push('--insert-before', target.afterCommitId);
+      }
+    } else if (target.type === 'new-branch') {
+      throw new Error('new-branch target type not yet supported for hunk split');
+    } else {
+      throw new Error(`Unsupported target type for hunk split: ${(target as any).type}`);
+    }
+
+    await executeJjCommand(repoPath, 'new', newArgs);
+
+    // Step 4: Write the split content to the new commit (which is now @)
+    for (const [filePath, content] of fileContents.entries()) {
+      const ranges = rangesByFile.get(filePath)!;
+      const splitContent = extractLineRanges(content, ranges);
+      const fullPath = join(repoPath, filePath);
+      await writeFile(fullPath, splitContent);
+    }
+
+    // Set description on the new commit if provided
+    if (description) {
+      await executeJjCommand(repoPath, 'describe', ['-m', description]);
+    }
+
+    console.log('✅ Hunk split completed successfully');
   });
 }
 

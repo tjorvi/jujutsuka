@@ -10,6 +10,7 @@ import {
   getCommitIdFromChangeId,
   assertCommitExists,
   assertParentChild,
+  getFileContent,
   type TestRepo
 } from './test-helpers.js';
 import {
@@ -23,7 +24,9 @@ import {
   executeSplitAtEvolog,
   getCommitEvolog,
   createChangeId,
-  getRepositoryCommits
+  getRepositoryCommits,
+  executeHunkSplit,
+  parseHunkRange
 } from './repo-parser.js';
 
 describe('Git Commands', () => {
@@ -460,6 +463,210 @@ describe('Git Commands', () => {
 
       await assertParentChild(repo, commit3.changeId, commit1.changeId);
       await assertParentChild(repo, commit2.changeId, commit3.changeId);
+    });
+  });
+
+  describe('parseHunkRange', () => {
+    it('should parse a simple hunk range', () => {
+      const range = parseHunkRange('file.txt:10-20');
+      expect(range.filePath).toBe('file.txt');
+      expect(range.startLine).toBe(10);
+      expect(range.endLine).toBe(20);
+    });
+
+    it('should parse a path with directory', () => {
+      const range = parseHunkRange('src/main.ts:5-15');
+      expect(range.filePath).toBe('src/main.ts');
+      expect(range.startLine).toBe(5);
+      expect(range.endLine).toBe(15);
+    });
+
+    it('should parse a Windows path with colon', () => {
+      const range = parseHunkRange('C:/Users/test/file.txt:1-5');
+      expect(range.filePath).toBe('C:/Users/test/file.txt');
+      expect(range.startLine).toBe(1);
+      expect(range.endLine).toBe(5);
+    });
+
+    it('should parse a single line range', () => {
+      const range = parseHunkRange('test.txt:42-42');
+      expect(range.filePath).toBe('test.txt');
+      expect(range.startLine).toBe(42);
+      expect(range.endLine).toBe(42);
+    });
+
+    it('should throw error for invalid format without colon', () => {
+      expect(() => parseHunkRange('file.txt')).toThrow('Invalid hunk range format');
+    });
+
+    it('should throw error for invalid line range format', () => {
+      expect(() => parseHunkRange('file.txt:10')).toThrow('Invalid line range format');
+    });
+
+    it('should throw error for non-numeric line numbers', () => {
+      expect(() => parseHunkRange('file.txt:abc-def')).toThrow('Invalid line numbers');
+    });
+
+    it('should throw error for zero line numbers', () => {
+      expect(() => parseHunkRange('file.txt:0-10')).toThrow('Line numbers must be >= 1');
+    });
+
+    it('should throw error for inverted range', () => {
+      expect(() => parseHunkRange('file.txt:20-10')).toThrow('Start line must be <= end line');
+    });
+  });
+
+  describe('executeHunkSplit', () => {
+    it('should split specific line ranges from a file to a new commit', async () => {
+      await createCommit(repo, 'First commit', {
+        'file1.txt': 'line1\nline2\nline3\nline4\nline5'
+      });
+      const commit2 = await createCommit(repo, 'Second commit', {
+        'file2.txt': 'line1\nline2\nline3\nline4\nline5'
+      });
+
+      // Split only lines 1-2 from file2.txt to a new commit
+      await executeHunkSplit(
+        repo.path,
+        commit2.commitId,
+        [{ filePath: 'file2.txt', startLine: 1, endLine: 2 }],
+        { type: 'after', commitId: commit2.commitId }
+      );
+
+      // Verify commit2 still has file2.txt but with only lines 3-5
+      const commit2Files = await getCommitFiles(repo, commit2.changeId);
+      expect(commit2Files).toHaveLength(1);
+      expect(commit2Files[0].path).toBe('file2.txt');
+
+      // Verify the file content contains only lines 3-5
+      const updatedCommit2Id = await getCommitIdFromChangeId(repo, commit2.changeId);
+      const commit2Content = await getFileContent(repo, updatedCommit2Id, 'file2.txt');
+      expect(commit2Content).toBe('line3\nline4\nline5');
+
+      // Verify a new commit exists with file2.txt containing only lines 1-2
+      const newCommitId = await assertCommitExists(repo, {
+        files: [{ path: 'file2.txt', status: 'modified' }]
+      });
+
+      // Verify the new commit's file content contains only lines 1-2
+      const newCommitContent = await getFileContent(repo, newCommitId, 'file2.txt');
+      expect(newCommitContent).toBe('line1\nline2');
+    });
+
+    it('should split multiple non-contiguous ranges from the same file', async () => {
+      const commit = await createCommit(repo, 'Test commit', {
+        'test.txt': 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10'
+      });
+
+      // Split lines 1-3 and 7-9, leaving 4-6 and 10 in original commit
+      await executeHunkSplit(
+        repo.path,
+        commit.commitId,
+        [
+          { filePath: 'test.txt', startLine: 1, endLine: 3 },
+          { filePath: 'test.txt', startLine: 7, endLine: 9 }
+        ],
+        { type: 'after', commitId: commit.commitId }
+      );
+
+      // Verify original commit still has test.txt with lines 4-6 and 10
+      const files = await getCommitFiles(repo, commit.changeId);
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe('test.txt');
+
+      // Verify content is lines 4-6 and 10
+      const updatedCommitId = await getCommitIdFromChangeId(repo, commit.changeId);
+      const remainingContent = await getFileContent(repo, updatedCommitId, 'test.txt');
+      expect(remainingContent).toBe('line4\nline5\nline6\nline10');
+
+      // Verify new commit has test.txt with lines 1-3 and 7-9
+      const newCommitId = await assertCommitExists(repo, {
+        files: [{ path: 'test.txt', status: 'modified' }]
+      });
+
+      // Verify content is lines 1-3 and 7-9
+      const splitContent = await getFileContent(repo, newCommitId, 'test.txt');
+      expect(splitContent).toBe('line1\nline2\nline3\nline7\nline8\nline9');
+    });
+
+    it('should split ranges from multiple files', async () => {
+      const commit = await createCommit(repo, 'Multi-file commit', {
+        'file1.txt': 'f1line1\nf1line2\nf1line3',
+        'file2.txt': 'f2line1\nf2line2\nf2line3',
+        'file3.txt': 'f3line1\nf3line2\nf3line3'
+      });
+
+      // Split lines 1-2 from file1 and lines 2-3 from file2
+      await executeHunkSplit(
+        repo.path,
+        commit.commitId,
+        [
+          { filePath: 'file1.txt', startLine: 1, endLine: 2 },
+          { filePath: 'file2.txt', startLine: 2, endLine: 3 }
+        ],
+        { type: 'after', commitId: commit.commitId }
+      );
+
+      // Verify original commit has all 3 files with modified content
+      const files = await getCommitFiles(repo, commit.changeId);
+      expect(files).toHaveLength(3);
+      const filePaths = files.map(f => f.path).sort();
+      expect(filePaths).toEqual(['file1.txt', 'file2.txt', 'file3.txt']);
+
+      // Verify file1.txt has only line 3
+      const updatedCommitId = await getCommitIdFromChangeId(repo, commit.changeId);
+      const file1Content = await getFileContent(repo, updatedCommitId, 'file1.txt');
+      expect(file1Content).toBe('f1line3');
+
+      // Verify file2.txt has only line 1
+      const file2Content = await getFileContent(repo, updatedCommitId, 'file2.txt');
+      expect(file2Content).toBe('f2line1');
+
+      // Verify file3.txt is unchanged
+      const file3Content = await getFileContent(repo, updatedCommitId, 'file3.txt');
+      expect(file3Content).toBe('f3line1\nf3line2\nf3line3');
+
+      // Verify new commit has file1.txt and file2.txt with split content
+      const newCommitId = await assertCommitExists(repo, {
+        files: [
+          { path: 'file1.txt', status: 'modified' },
+          { path: 'file2.txt', status: 'modified' }
+        ]
+      });
+
+      // Verify file1.txt has lines 1-2
+      const newFile1Content = await getFileContent(repo, newCommitId, 'file1.txt');
+      expect(newFile1Content).toBe('f1line1\nf1line2');
+
+      // Verify file2.txt has lines 2-3
+      const newFile2Content = await getFileContent(repo, newCommitId, 'file2.txt');
+      expect(newFile2Content).toBe('f2line2\nf2line3');
+    });
+
+    it('should set description on the new commit when provided', async () => {
+      const commit = await createCommit(repo, 'Original description', {
+        'file.txt': 'line1\nline2\nline3'
+      });
+
+      await executeHunkSplit(
+        repo.path,
+        commit.commitId,
+        [{ filePath: 'file.txt', startLine: 1, endLine: 2 }],
+        { type: 'after', commitId: commit.commitId },
+        'Split changes description'
+      );
+
+      // Verify the new commit has the specified description
+      const newCommitId = await assertCommitExists(repo, {
+        message: 'Split changes description'
+      });
+
+      const description = await getDescription(repo.path, newCommitId);
+      expect(description).toBe('Split changes description');
+
+      // Verify it has the split file content
+      const content = await getFileContent(repo, newCommitId, 'file.txt');
+      expect(content).toBe('line1\nline2');
     });
   });
 

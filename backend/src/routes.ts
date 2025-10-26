@@ -21,7 +21,9 @@ import {
   getOperationLog,
   executeMoveBookmark,
   executeDeleteBookmark,
-  executeCreateBookmark
+  executeCreateBookmark,
+  executeHunkSplit,
+  parseHunkRange
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
@@ -214,7 +216,29 @@ export const appRouter = router({
           bookmarkName: z.string(),
           targetCommitId: z.string()
         }),
-        
+        z.object({
+          type: z.literal('hunk-split'),
+          sourceCommitId: z.string(),
+          hunkRanges: z.array(z.object({
+            filePath: z.string(),
+            startLine: z.number(),
+            endLine: z.number()
+          })),
+          target: z.union([
+            z.object({ type: z.literal('before'), commitId: z.string() }),
+            z.object({ type: z.literal('after'), commitId: z.string() }),
+            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
+            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
+            z.object({
+              type: z.literal('new-commit-between'),
+              beforeCommitId: z.string(),
+              afterCommitId: z.string()
+            }),
+            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
+          ]),
+          description: z.string().optional()
+        }),
+
         // Legacy commands (for backwards compatibility)
         z.object({
           type: z.literal('rebase'),
@@ -387,6 +411,11 @@ export const appRouter = router({
           const bookmarkName = createBookmarkName(command.bookmarkName);
           const targetCommitId = createCommitId(command.targetCommitId);
           await executeCreateBookmark(repoPath, bookmarkName, targetCommitId);
+
+        } else if (command.type === 'hunk-split') {
+          const sourceCommitId = createCommitId(command.sourceCommitId);
+          const target = parseCommandTarget(command.target);
+          await executeHunkSplit(repoPath, sourceCommitId, command.hunkRanges, target, command.description);
 
         } else if (command.type === 'rebase') {
           const commitId = createCommitId(command.commitId);

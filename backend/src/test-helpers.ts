@@ -186,7 +186,7 @@ export async function getFileContent(
 ): Promise<string> {
   const { stdout } = await execa(
     'jj',
-    ['cat', '-r', commitId, filePath],
+    ['file', 'show', '-r', commitId, filePath],
     { cwd: repo.path }
   );
   return stdout;
