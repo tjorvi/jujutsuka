@@ -1,12 +1,12 @@
 import { useMemo, useRef, useEffect, useState, useId } from 'react';
-import type { ChangeId, CommitId, Commit, BookmarkName } from "../../backend/src/repo-parser";
-import type { Stack, StackId } from "./stackUtils";
-import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
-import { draggedFileChange, draggedChange, dragChange, useDragDrop, dragBookmark, draggedBookmark, type DropZonePosition } from './useDragDrop';
+import type { ChangeId, CommitId, Commit } from "../../backend/src/repo-parser";
+import type { Stack, StackId, ParallelGroup, LayoutStackGraph } from "./stackUtils";
+import { draggedFileChange, draggedChange, useDragDrop, type DropZonePosition } from './useDragDrop';
 import { queries } from './api';
 import { useGraphStore } from './graphStore';
 import styles from './StackGraph.module.css';
 import type { CommandTarget } from './commands';
+import { ChangeCard } from './ChangeCard';
 
 interface StackComponentProps {
   stack: Stack;
@@ -16,55 +16,6 @@ interface StackComponentProps {
   currentCommitId?: CommitId;
   divergentChangeIds: ReadonlySet<ChangeId>;
   onCommitSelect: (commitId: CommitId) => void;
-}
-
-// Helper function to create a visual size indicator for commits
-function getCommitSizeIndicator(additions: number, deletions: number) {
-  const total = additions + deletions;
-
-  // Categorize size
-  let size: 'tiny' | 'small' | 'medium' | 'large' | 'huge';
-  let label: string;
-
-  if (total === 0) {
-    size = 'tiny';
-    label = '';
-  } else if (total <= 10) {
-    size = 'tiny';
-    label = 'XS';
-  } else if (total <= 50) {
-    size = 'small';
-    label = 'S';
-  } else if (total <= 200) {
-    size = 'medium';
-    label = 'M';
-  } else if (total <= 500) {
-    size = 'large';
-    label = 'L';
-  } else {
-    size = 'huge';
-    label = 'XL';
-  }
-
-  const colors = {
-    tiny: '#d1d5db',
-    small: '#93c5fd',
-    medium: '#fbbf24',
-    large: '#fb923c',
-    huge: '#ef4444',
-  };
-
-  return {
-    size,
-    label,
-    color: colors[size],
-    tooltip: `+${additions} -${deletions}`,
-  };
-}
-
-function isSyntheticBookmark(bookmarkName: BookmarkName): boolean {
-  const label = bookmarkName as unknown as string;
-  return label === '@' || label === 'git_head()';
 }
 
 interface DropZoneProps {
@@ -194,75 +145,6 @@ function DropZone({ position, children }: DropZoneProps) {
   );
 }
 
-function BranchDropZone({ commitId }: { commitId: CommitId }) {
-  const { handleFileDrop, handleCommitDrop } = useDragDrop();
-  const [isOver, setIsOver] = useState(false);
-  const createNewChange = useGraphStore(state => state.createNewChange);
-  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
-
-  const metadata: Record<string, string> = {
-    'data-drop-kind': 'new-branch',
-    'data-from-commit': commitId,
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsOver(false);
-
-    const fc = draggedFileChange(e);
-    const cc = draggedChange(e);
-
-    if (fc) {
-      handleFileDrop({ kind: 'new-branch', commit: commitId }, fc);
-    } else if (cc) {
-      handleCommitDrop({ kind: 'new-branch', commit: commitId }, cc);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsOver(false);
-    }
-  };
-
-  const handleCreateEmptyBranch = () => {
-    if (isExecutingCommand) {
-      return;
-    }
-    void createNewChange([], { type: 'new-branch', fromCommitId: commitId });
-  };
-
-  return (
-    <div
-      className={styles.dropZoneBranch}
-      {...metadata}
-      data-over={isOver ? 'true' : 'false'}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        handleCreateEmptyBranch();
-      }}
-      title="Drop to split into a new branch. Click to create an empty change here."
-    >
-      🌿
-    </div>
-  );
-}
-
 function StackComponent({
   stack,
   commitGraph,
@@ -272,7 +154,6 @@ function StackComponent({
   divergentChangeIds,
   onCommitSelect
 }: StackComponentProps) {
-  const { handleFileDrop, handleCommitDrop, handleBookmarkDrop } = useDragDrop();
   const [hoveredCommitId, setHoveredCommitId] = useState<CommitId | null>(null);
   const [commitStats, setCommitStats] = useState<Record<CommitId, { additions: number; deletions: number }>>({});
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
@@ -315,6 +196,12 @@ function StackComponent({
   }, [stack.commits, commitGraph]);
 
   return (<>
+    <svg width="12" height="12" style={{
+      display: 'block',
+      margin: '0 auto',
+    }}>
+      <circle r="2" cx="6" cy="6" fill="black" />
+    </svg>
     <div
       className={styles.stackContainer}
       data-parallel={isInParallelGroup ? 'true' : 'false'}
@@ -342,11 +229,6 @@ function StackComponent({
 
         const isSelected = selectedCommitId === commitId;
         const isCurrent = currentCommitId === commitId;
-        const isDragTarget = isDraggingFile && !draggedCommitId; // Only true when dragging file, not commit
-        const isHovered = hoveredCommitId === commitId;
-        const isBeingDragged = draggedCommitId === commitId;
-        const isCommitDropTarget = draggedCommitId && draggedCommitId !== commitId;
-        const hasConflicts = commit.hasConflicts;
         const isDivergent = divergentChangeIds.has(commit.changeId);
         const nextCommitId = commitsInDisplayOrder[index + 1];
         const stats = commitStats[commitId];
@@ -365,204 +247,26 @@ function StackComponent({
           bookmarks: commitBookmarks,
         });
 
-        const sizeIndicator = stats ? (() => {
-          const { additions, deletions } = stats;
-          const indicator = getCommitSizeIndicator(additions, deletions);
-          return indicator.label ? (
-            <div
-              style={{
-                fontSize: '9px',
-                fontWeight: 'bold',
-                padding: '1px 5px',
-                borderRadius: '3px',
-                background: indicator.color,
-                color: 'white',
-              }}
-              title={indicator.tooltip}
-            >
-              {indicator.label}
-            </div>
-          ) : null;
-        })() : null;
-
         return (
           <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ position: 'relative' }}>
-              <div
-                draggable={true}
-                className={styles.commitCard}
-                data-drop-kind="commit"
-                data-commit={commitId}
-                data-selected={isSelected ? 'true' : 'false'}
-                data-current={isCurrent ? 'true' : 'false'}
-                data-being-dragged={isBeingDragged ? 'true' : 'false'}
-                data-hovered={(isHovered && !isSelected) ? 'true' : 'false'}
-                data-commit-dragging={(draggedCommitId !== null && draggedCommitId !== commitId) ? 'true' : 'false'}
-                data-file-dragging={(isDraggingFile && !draggedCommitId) ? 'true' : 'false'}
-                data-commit-drop-target={(isCommitDropTarget && !isHovered) ? 'true' : 'false'}
-                data-file-drag-target={(isDragTarget && !isHovered) ? 'true' : 'false'}
-                data-parallel={isInParallelGroup ? 'true' : 'false'}
-                data-conflict={hasConflicts ? 'true' : 'false'}
-                data-divergent={isDivergent ? 'true' : 'false'}
-                data-empty={isEmpty ? 'true' : 'false'}
-                style={{
-                  marginBottom: 0,
-                }}
-                onDragStart={(e: React.DragEvent) => {
-                  e.stopPropagation();
-                  setDraggedCommitId(commitId);
-                  const changeId = commit.changeId;
-                  dragChange(e, { source: 'change', changeId, commitId });
-                }}
-                onDragEnd={() => {
-                  setDraggedCommitId(null);
-                  setHoveredCommitId(null);
-                }}
-                onClick={() => onCommitSelect(commitId)}
-                onDrop={!isSelected ? (e: React.DragEvent) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setHoveredCommitId(null);
-                  setIsDraggingFile(false);
-
-                  const fc = draggedFileChange(e);
-                  const cc = draggedChange(e);
-                  const bc = draggedBookmark(e);
-
-                  if (fc) {
-                    handleFileDrop({ kind: 'existing', commit: commitId }, fc);
-                  } else if (bc) {
-                    handleBookmarkDrop({ kind: 'existing', commit: commitId }, bc);
-                  } else if (cc) {
-                    handleCommitDrop({ kind: 'existing', commit: commitId }, cc, { mode: 'squash' });
-                  }
-                } : undefined}
-                onDragOver={!isSelected ? (e: React.DragEvent) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                } : undefined}
-                onDragEnter={!isSelected ? (e: React.DragEvent) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setHoveredCommitId(commitId);
-                  if (e.dataTransfer.types.includes('application/json')) {
-                    setIsDraggingFile(true);
-                  }
-                } : undefined}
-                onDragLeave={!isSelected ? (e: React.DragEvent) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setHoveredCommitId(null);
-                  }
-                } : undefined}
-              >
-                <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b7280', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ fontWeight: '600', color: '#374151' }}>
-                        change: {commit.changeId.slice(0, 8)}
-                      </div>
-                      {isCurrent && (
-                        <span
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#047857',
-                            border: '1px solid #34d399',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            background: '#d1fae5',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          current
-                        </span>
-                      )}
-                      {hasConflicts && (
-                        <span
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#b91c1c',
-                            border: '1px solid #fca5a5',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            background: '#fef2f2',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          conflict
-                        </span>
-                      )}
-                      {isDivergent && (
-                        <span
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            color: '#5b21b6',
-                            border: '1px solid #c4b5fd',
-                            borderRadius: '3px',
-                            padding: '1px 4px',
-                            background: '#ede9fe',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          divergent
-                        </span>
-                      )}
-                    </div>
-                    {sizeIndicator && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {sizeIndicator}
-                      </div>
-                    )}
-                  </div>
-                  {commitBookmarks.length > 0 && (
-                    <div className={styles.bookmarkList}>
-                      {commitBookmarks.map((bookmarkName) => {
-                        const badgeLabel = bookmarkName as string;
-                        const synthetic = isSyntheticBookmark(bookmarkName);
-                        return (
-                          <span
-                            key={badgeLabel}
-                            className={styles.bookmarkBadge}
-                            draggable={!synthetic}
-                            onDragStart={!synthetic ? (bookmarkDragEvent: React.DragEvent) => {
-                              bookmarkDragEvent.stopPropagation();
-                              dragBookmark(bookmarkDragEvent, { source: 'bookmark', bookmarkName });
-                            } : undefined}
-                          >
-                            <span aria-hidden="true">🔖</span>
-                            {badgeLabel}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {isDivergent && (
-                    <div style={{ fontSize: '9px', color: '#9ca3af' }}>
-                      commit: {commitId.slice(0, 8)}
-                    </div>
-                  )}
-                </div>
-                <div style={{
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  margin: '4px 0',
-                  color: '#111827',
-                  wordWrap: 'break-word',
-                  lineHeight: '1.2'
-                }}>
-                  {commit.description}
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280' }}>
-                  {commit.author.name} • {commit.timestamp.toLocaleDateString()}
-                </div>
-              </div>
-              <BranchDropZone commitId={commitId} />
-            </div>
+            <ChangeCard
+              commitId={commitId}
+              commit={commit}
+              stats={stats}
+              draggedCommitId={draggedCommitId}
+              hoveredCommitId={hoveredCommitId}
+              isDraggingFile={isDraggingFile}
+              isInParallelGroup={isInParallelGroup}
+              isSelected={isSelected}
+              isCurrent={isCurrent}
+              isDivergent={isDivergent}
+              isEmpty={isEmpty}
+              bookmarks={commitBookmarks}
+              onCommitSelect={onCommitSelect}
+              setHoveredCommitId={(value) => setHoveredCommitId(value)}
+              setIsDraggingFile={(value) => setIsDraggingFile(value)}
+              setDraggedCommitId={(value) => setDraggedCommitId(value)}
+            />
             <DropZone
               position={nextCommitId
                 ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
@@ -573,7 +277,10 @@ function StackComponent({
         );
       })}
     </div>
+
     <svg width="12" height="12" style={{
+      display: 'block',
+      margin: '0 auto',
     }}>
       <path d="M0,12 L6,0 L12,12" fill="black" />
     </svg>
