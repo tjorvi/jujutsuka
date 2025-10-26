@@ -215,6 +215,8 @@ export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: D
                 color: '#e5e7eb',
                 fontSize: '12px',
                 lineHeight: '1.5',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
               {explanation.content}

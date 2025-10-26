@@ -66,7 +66,20 @@ class LLMService {
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || '';
+    const choice = data.choices?.[0];
+    const content = choice?.message?.content || '';
+
+    // Check if the response was cut off due to length limits
+    if (choice?.finish_reason === 'length') {
+      throw new Error('Response was cut off due to token limit. Try a shorter diff or increase max_completion_tokens.');
+    }
+
+    // Check if we got an empty response
+    if (!content.trim()) {
+      throw new Error('LLM returned an empty response. This may indicate a configuration issue with the model or prompt.');
+    }
+
+    return content;
   }
 
   async summarizeDiff(filePath: string, diff: string): Promise<string> {
@@ -89,6 +102,13 @@ class LLMService {
     hunk: { readonly header: string; readonly lines: readonly string[] },
   ): Promise<string> {
     const diffSnippet = [hunk.header, ...hunk.lines].join('\n');
+
+    // Truncate very large diffs to avoid token limit issues
+    const MAX_DIFF_LENGTH = 2000;
+    const truncatedDiff = diffSnippet.length > MAX_DIFF_LENGTH
+      ? diffSnippet.slice(0, MAX_DIFF_LENGTH) + '\n... (truncated)'
+      : diffSnippet;
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
@@ -103,11 +123,11 @@ class LLMService {
       },
       {
         role: 'user',
-        content: `Explain this diff hunk from ${filePath}:\n\n${diffSnippet}`,
+        content: `Explain this diff hunk from ${filePath}:\n\n${truncatedDiff}`,
       },
     ];
 
-    return this.complete(messages, { maxTokens: 500 });
+    return this.complete(messages, { maxTokens: 800 });
   }
 }
 
