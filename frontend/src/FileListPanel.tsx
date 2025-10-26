@@ -16,6 +16,13 @@ interface FileListPanelProps {
   selectedFilePath?: string;
 }
 
+const sidebarViews = ['details', 'evolog'] as const;
+type SidebarView = typeof sidebarViews[number];
+const sidebarViewLabels: Record<SidebarView, string> = {
+  details: 'Details',
+  evolog: 'Evolution Log',
+} as const;
+
 // Helper function to create a visual size indicator
 function getSizeIndicator(additions?: number, deletions?: number) {
   if (additions === undefined || deletions === undefined) {
@@ -84,6 +91,7 @@ export function FileListPanel({
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [newBookmarkName, setNewBookmarkName] = useState('');
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<SidebarView>('details');
 
   // Use a placeholder commit ID when none is selected, and handle it in the render
   const fileChanges = useQuery(
@@ -129,6 +137,14 @@ export function FileListPanel({
     setNewBookmarkName('');
     setBookmarkError(null);
   }, [selectedCommitId]);
+
+  useEffect(() => {
+    setActiveView('details');
+  }, [selectedCommitId]);
+
+  const handleViewSelect = (nextView: SidebarView) => {
+    setActiveView(nextView);
+  };
 
   const normalizedDraftDescription = descriptionDraft.trim();
   const normalizedCurrentDescription = (selectedCommit?.description ?? '').trim();
@@ -274,6 +290,42 @@ export function FileListPanel({
     );
   }
 
+  const previewBanner = evologPreviewCommitId ? (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+      padding: '8px 10px',
+      borderRadius: '4px',
+      border: '1px solid #fde68a',
+      background: '#fef3c7',
+      color: '#78350f',
+      fontSize: '12px',
+      marginBottom: '12px',
+    }}>
+      <span>
+        Viewing evolution entry {evologPreviewCommitId.slice(0, 8)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onEvologPreviewSelect?.(undefined)}
+        style={{
+          padding: '4px 8px',
+          borderRadius: '4px',
+          border: '1px solid #d97706',
+          background: '#fcd34d',
+          color: '#92400e',
+          cursor: 'pointer',
+          fontSize: '11px',
+          fontWeight: 500,
+        }}
+      >
+        Back to latest
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div style={{
       width: '250px',
@@ -284,66 +336,65 @@ export function FileListPanel({
       display: 'flex',
       flexDirection: 'column',
     }}>
-      <h3 style={{ 
-        margin: '0 0 10px 0', 
-        fontSize: '14px', 
-        color: '#111827',
-        borderBottom: '1px solid #e5e7eb',
-        paddingBottom: '6px',
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '16px',
       }}>
-        📁 Modified Files
-      </h3>
-      
-      {activeCommitId && (
-        <div style={{ 
-          fontSize: '11px', 
-          color: '#6b7280', 
-          marginBottom: '10px',
-          fontFamily: 'monospace',
-        }}>
-          Viewing commit {activeCommitId.slice(0, 8)}
-          {selectedCommitId && activeCommitId !== selectedCommitId && (
-            <span style={{ marginLeft: '6px', color: '#f97316' }}>
-              (evolog preview)
-            </span>
+        {sidebarViews.map((view) => {
+          const isActive = activeView === view;
+          return (
+            <button
+              key={view}
+              type="button"
+              onClick={() => handleViewSelect(view)}
+              aria-pressed={isActive}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '4px',
+                border: isActive ? '1px solid #2563eb' : '1px solid #d1d5db',
+                background: isActive ? '#2563eb' : '#ffffff',
+                color: isActive ? '#ffffff' : '#374151',
+                cursor: isActive ? 'default' : 'pointer',
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
+            >
+              {sidebarViewLabels[view]}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeView === 'details' && (
+        <>
+          <h3 style={{ 
+            margin: '0 0 10px 0', 
+            fontSize: '14px', 
+            color: '#111827',
+            borderBottom: '1px solid #e5e7eb',
+            paddingBottom: '6px',
+          }}>
+            📁 Modified Files
+          </h3>
+          
+          {activeCommitId && (
+            <div style={{ 
+              fontSize: '11px', 
+              color: '#6b7280', 
+              marginBottom: '10px',
+              fontFamily: 'monospace',
+            }}>
+              Viewing commit {activeCommitId.slice(0, 8)}
+              {selectedCommitId && activeCommitId !== selectedCommitId && (
+                <span style={{ marginLeft: '6px', color: '#f97316' }}>
+                  (evolog preview)
+                </span>
+              )}
+            </div>
           )}
-        </div>
-      )}
-      
-      {selectedCommitId && evologPreviewCommitId && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          padding: '8px 10px',
-          borderRadius: '4px',
-          border: '1px solid #fde68a',
-          background: '#fef3c7',
-          color: '#78350f',
-          fontSize: '12px',
-          marginBottom: '12px',
-        }}>
-          <span>
-            Viewing evolution entry {evologPreviewCommitId.slice(0, 8)}
-          </span>
-          <button
-            onClick={() => onEvologPreviewSelect?.(undefined)}
-            style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              border: '1px solid #d97706',
-              background: '#fcd34d',
-              color: '#92400e',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 500,
-            }}
-          >
-            Back to latest
-          </button>
-        </div>
-      )}
+          
+          {previewBanner}
       
       <div style={{
         display: 'flex',
@@ -782,9 +833,15 @@ export function FileListPanel({
         </div>
       )}
 
-      {/* Evolution Log Section */}
-      {selectedCommitId && (
-        <div style={{ marginTop: '24px' }}>
+        </>
+      )}
+
+      {activeView === 'evolog' && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+        }}>
           <h3 style={{ 
             margin: '0 0 16px 0', 
             fontSize: '16px', 
@@ -794,6 +851,8 @@ export function FileListPanel({
           }}>
             🔄 Evolution Log
           </h3>
+
+          {previewBanner}
 
           {evolog.kind === 'loading' && (
             <div style={{ color: '#6b7280', fontSize: '14px' }}>
