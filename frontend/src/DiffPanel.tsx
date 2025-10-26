@@ -1,14 +1,36 @@
 import { useEffect, useState } from 'react';
-import { queries, useQuery, trpc } from './api';
+import { queries, useQuery } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useGraphStore } from './graphStore';
 import { DiffHunk, DiffLine } from './DiffHunk';
 import { groupDiffIntoHunks } from './diffParsing';
 
+interface DiffPanelDataSource {
+  readonly fileChanges: (
+    input: { repoPath: string; commitId: string },
+    options: { signal: AbortSignal },
+  ) => Promise<{
+    path: string;
+    status: string;
+    additions?: number;
+    deletions?: number;
+  }[]>;
+  readonly fileDiff: (
+    input: { repoPath: string; commitId: string; filePath: string },
+    options: { signal: AbortSignal },
+  ) => Promise<string>;
+}
+
+const defaultDataSource: DiffPanelDataSource = {
+  fileChanges: queries.fileChanges.query,
+  fileDiff: queries.fileDiff.query,
+};
+
 interface DiffPanelProps {
   commitId?: CommitId;
   selectedFilePath?: string;
   isPreview?: boolean;
+  dataSource?: DiffPanelDataSource;
 }
 
 interface FileDiffData {
@@ -82,21 +104,21 @@ function renderDiffContent(diff: string, options?: DiffContentOptions) {
   );
 }
 
-export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelProps) {
+export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = defaultDataSource }: DiffPanelProps) {
   const repoPath = useGraphStore(state => state.repoPath);
   const [allFileDiffs, setAllFileDiffs] = useState<FileDiffData[]>([]);
   const [loadingAllDiffs, setLoadingAllDiffs] = useState(false);
 
   // Fetch file changes when showing unified view
   const fileChanges = useQuery(
-    queries.fileChanges,
+    { query: dataSource.fileChanges },
     { repoPath, commitId: commitId || '' },
     { enabled: Boolean(repoPath && commitId && !selectedFilePath) }
   );
 
   // Fetch single file diff when a specific file is selected
   const fileDiff = useQuery(
-    queries.fileDiff,
+    { query: dataSource.fileDiff },
     {
       repoPath,
       commitId: commitId || '',
@@ -113,6 +135,8 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelPr
       setAllFileDiffs([]);
       return;
     }
+
+    const abortController = new AbortController();
 
     const fetchAllDiffs = async () => {
       setLoadingAllDiffs(true);
@@ -132,11 +156,11 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelPr
       // Fetch all diffs in parallel
       const diffPromises = files.map(async (file, index) => {
         try {
-          const diff = await trpc.fileDiff.query({
+          const diff = await dataSource.fileDiff({
             repoPath,
             commitId,
             filePath: file.path,
-          });
+          }, { signal: abortController.signal });
           return { index, diff: String(diff), error: undefined };
         } catch (error) {
           return {
@@ -167,7 +191,11 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelPr
     };
 
     fetchAllDiffs();
-  }, [commitId, selectedFilePath, fileChanges, repoPath]);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [commitId, selectedFilePath, fileChanges, repoPath, dataSource]);
 
   // Unified diff view - show all files when no specific file is selected
   if (!commitId) {

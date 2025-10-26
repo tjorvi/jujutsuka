@@ -2,7 +2,6 @@ import { useEffect, useMemo } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { DiffPanel } from './DiffPanel';
 import { useGraphStore } from './graphStore';
-import { queries } from './api';
 import type { CommitId } from '../../backend/src/repo-parser';
 
 type Story = StoryObj<typeof DiffPanel>;
@@ -26,7 +25,9 @@ interface MockDiffData {
 
 type DiffPanelProps = React.ComponentProps<typeof DiffPanel>;
 
-interface MockedDiffPanelProps extends DiffPanelProps {
+type DiffPanelDataSource = NonNullable<DiffPanelProps['dataSource']>;
+
+interface MockedDiffPanelProps extends Omit<DiffPanelProps, 'dataSource'> {
   readonly repoPath?: string;
   readonly fileMocks?: Record<string, MockDiffData>;
 }
@@ -41,64 +42,42 @@ function useRepoPath(repoPath: string) {
   }, [repoPath]);
 }
 
-function useDiffMocks(fileMocks: Record<string, MockDiffData> | undefined) {
-  const fileChanges = useMemo(() => {
-    if (!fileMocks) {
-      return undefined;
-    }
-    return Object.entries(fileMocks).map(([path, meta]) => ({
-      path,
-      status: meta.status ?? 'M',
-      additions: meta.additions,
-      deletions: meta.deletions,
-    }));
-  }, [fileMocks]);
-
-  useEffect(() => {
-    if (!fileMocks) {
-      return undefined;
-    }
-
-    const originalFileDiff = queries.fileDiff.query.bind(queries.fileDiff);
-    const originalFileChanges = queries.fileChanges.query.bind(queries.fileChanges);
-
-    queries.fileDiff.query = async (
-      input: { repoPath: string; commitId: string; filePath: string },
-      options: { signal: AbortSignal },
-    ) => {
-      void options.signal;
-      const mock = fileMocks[input.filePath];
-      if (!mock) {
-        throw new Error(`No mock diff for ${input.filePath}`);
-      }
-      return mock.diff;
-    };
-
-    queries.fileChanges.query = async (
-      input: { repoPath: string; commitId: string },
-      options: { signal: AbortSignal },
-    ) => {
+function createMockDataSource(fileMocks: Record<string, MockDiffData> | undefined): DiffPanelDataSource {
+  return {
+    fileChanges: async (input, options) => {
       void input;
       void options.signal;
-      return fileChanges ?? [];
-    };
-
-    return () => {
-      queries.fileDiff.query = originalFileDiff;
-      queries.fileChanges.query = originalFileChanges;
-    };
-  }, [fileMocks, fileChanges]);
-
-  return fileChanges;
+      if (!fileMocks) {
+        return [];
+      }
+      return Object.entries(fileMocks).map(([path, meta]) => ({
+        path,
+        status: meta.status ?? 'M',
+        additions: meta.additions,
+        deletions: meta.deletions,
+      }));
+    },
+    fileDiff: async ({ filePath }, options) => {
+      void options.signal;
+      if (!fileMocks) {
+        return '';
+      }
+      const mock = fileMocks[filePath];
+      if (!mock) {
+        throw new Error(`No mock diff for ${filePath}`);
+      }
+      return mock.diff;
+    },
+  };
 }
 
 function MockedDiffPanel({ repoPath = '/storybook/repo', fileMocks, ...props }: MockedDiffPanelProps) {
   useRepoPath(repoPath);
-  useDiffMocks(fileMocks);
+  const dataSource = useMemo(() => createMockDataSource(fileMocks), [fileMocks]);
 
   return (
     <div style={{ height: '100vh', display: 'flex' }}>
-      <DiffPanel {...props} />
+      <DiffPanel {...props} dataSource={dataSource} />
     </div>
   );
 }
@@ -177,3 +156,9 @@ export const CommitWithMultipleFiles: Story = {
     />
   ),
 };
+
+export const __namedExportsOrder = [
+  'NoCommitSelected',
+  'SingleFileDiff',
+  'CommitWithMultipleFiles',
+];
