@@ -216,8 +216,8 @@ export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> 
     console.log(`📥 Fetching repository commits from ${repoPath}`);
     console.log(`🔧 Using template: ${template}`);
     const escapedTemplateForSingleQuotes = template.replace(/'/g, `'\"'\"'`);
-    console.log(`📝 Equivalent shell command:\njj log --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
-    const { stdout } = await $({ cwd: repoPath })`jj log --no-graph --template ${template}`;
+    console.log(`📝 Equivalent shell command:\njj log -r root():: --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
+    const { stdout } = await $({ cwd: repoPath })`jj log -r root():: --no-graph --template ${template}`;
     console.log('📜 Raw jj log output:\n', stdout);
 
     return parseJjLog(stdout);
