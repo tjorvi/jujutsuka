@@ -78,6 +78,8 @@ export function FileListPanel({
   const addBookmark = useGraphStore(state => state.addBookmark);
   const deleteBookmark = useGraphStore(state => state.deleteBookmark);
   const abandonChange = useGraphStore(state => state.abandonChange);
+  const checkoutChange = useGraphStore(state => state.checkoutChange);
+  const currentCommitId = useGraphStore(state => state.currentCommitId);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [newBookmarkName, setNewBookmarkName] = useState('');
@@ -102,6 +104,9 @@ export function FileListPanel({
   const activeCommitId = viewCommitId ?? selectedCommitId;
   const selectedChangeId = selectedCommit?.changeId;
   const selectedCommitBookmarks = selectedCommitId ? (bookmarksByCommit[selectedCommitId] ?? []) : [];
+  const isCurrentChange = selectedCommitId !== undefined && currentCommitId === selectedCommitId;
+  const checkoutDisabled = selectedCommitId === undefined || isExecutingCommand || isCurrentChange;
+  const checkoutButtonLabel = isCurrentChange ? 'Checked out' : 'Check out change';
   const bookmarkNameSchema = useMemo(() => z.string().trim().min(1, 'Bookmark name is required'), []);
   const syntheticBookmarkNames = useMemo(() => new Set(['@', 'git_head()']), []);
 
@@ -461,29 +466,58 @@ export function FileListPanel({
         }}>
           Actions
         </label>
-        <button
-          onClick={() => {
-            if (!selectedCommitId) {
-              return;
-            }
-            void abandonChange(selectedCommitId);
-          }}
-          disabled={!selectedCommitId || isExecutingCommand}
-          style={{
-            alignSelf: 'flex-start',
-            padding: '6px 12px',
-            borderRadius: '4px',
-            border: '1px solid #ef4444',
-            background: (!selectedCommitId || isExecutingCommand) ? '#fee2e2' : '#ef4444',
-            color: (!selectedCommitId || isExecutingCommand) ? '#9ca3af' : '#ffffff',
-            cursor: (!selectedCommitId || isExecutingCommand) ? 'not-allowed' : 'pointer',
-            fontSize: '12px',
-            fontWeight: 500,
-          }}
-          title="Abandon this change"
-        >
-          Abandon change
-        </button>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+        }}>
+          <button
+            onClick={() => {
+              if (!selectedCommitId || checkoutDisabled) {
+                return;
+              }
+              void checkoutChange(selectedCommitId);
+            }}
+            disabled={checkoutDisabled}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '4px',
+              border: '1px solid #2563eb',
+              background: checkoutDisabled ? '#e5e7eb' : '#2563eb',
+              color: checkoutDisabled ? '#9ca3af' : '#ffffff',
+              cursor: checkoutDisabled ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+            }}
+            title={isCurrentChange
+              ? 'This change is already checked out'
+              : 'Check out this change into the workspace'}
+          >
+            {checkoutButtonLabel}
+          </button>
+          <button
+            onClick={() => {
+              if (!selectedCommitId) {
+                return;
+              }
+              void abandonChange(selectedCommitId);
+            }}
+            disabled={!selectedCommitId || isExecutingCommand}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ef4444',
+              background: (!selectedCommitId || isExecutingCommand) ? '#fee2e2' : '#ef4444',
+              color: (!selectedCommitId || isExecutingCommand) ? '#9ca3af' : '#ffffff',
+              cursor: (!selectedCommitId || isExecutingCommand) ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+            }}
+            title="Abandon this change"
+          >
+            Abandon change
+          </button>
+        </div>
       </div>
 
       <div className={styles.bookmarkSection}>

@@ -278,8 +278,6 @@ function StackComponent({
   const [draggedCommitId, setDraggedCommitId] = useState<CommitId | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const repoPath = useGraphStore(state => state.repoPath);
-  const checkoutChange = useGraphStore(state => state.checkoutChange);
-  const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const bookmarksByCommit = useGraphStore(state => state.bookmarksByCommit);
   const commitsInDisplayOrder = useMemo(() => stack.commits.slice().reverse(), [stack.commits]);
 
@@ -543,9 +541,11 @@ function StackComponent({
                       })}
                     </div>
                   )}
-                  <div style={{ fontSize: '9px', color: '#9ca3af' }}>
-                    commit: {commitId.slice(0, 8)}
-                  </div>
+                  {isDivergent && (
+                    <div style={{ fontSize: '9px', color: '#9ca3af' }}>
+                      commit: {commitId.slice(0, 8)}
+                    </div>
+                  )}
                 </div>
                 <div style={{
                   fontSize: '14px',
@@ -559,21 +559,6 @@ function StackComponent({
                 </div>
                 <div style={{ fontSize: '11px', color: '#6b7280' }}>
                   {commit.author.name} • {commit.timestamp.toLocaleDateString()}
-                </div>
-                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    className={styles.commitPrimaryActionButton}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      void checkoutChange(commitId);
-                    }}
-                    disabled={isExecutingCommand || isCurrent}
-                    title={isCurrent ? 'This change is already checked out' : 'Check out this change into the workspace'}
-                  >
-                    {isCurrent ? 'Checked out' : 'Check out'}
-                  </button>
                 </div>
               </div>
               <BranchDropZone commitId={commitId} />
