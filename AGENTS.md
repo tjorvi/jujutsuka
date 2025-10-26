@@ -9,6 +9,7 @@
 # Tests
 - Implement functional tests that describe _desired_ functionality as perceived from the consumers perspective.
   - If implementations are incomplete then tests _must reveal_ that instead of being tweaked to accommodate.
+- Passing tests are not our goal per se. Working software is our goal.
 
 # UIs
 - During early stages don't put in a lot of code for fancy graphics. Keep it all very sterile.
