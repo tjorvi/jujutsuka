@@ -6,6 +6,10 @@
 - Refer to SPEC.md to understand the app functionality.
 - When asked to implement functional features see if it would be appropriate to amend SPEC.md
 
+# Tests
+- Implement functional tests that describe _desired_ functionality as perceived from the consumers perspective.
+  - If implementations are incomplete then tests _must reveal_ that instead of being tweaked to accommodate.
+
 # UIs
 - During early stages don't put in a lot of code for fancy graphics. Keep it all very sterile.
 - Don't mix light backgrounds and light texts. Be consistent.
