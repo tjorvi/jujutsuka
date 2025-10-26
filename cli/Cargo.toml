@@ -1,0 +1,16 @@
+[package]
+name = "jjka"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.50", features = ["derive"] }
+jj-lib = "0.34.0"
+anyhow = "1.0"
+itertools = "0.13"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+config = "0.14"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
