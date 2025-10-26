@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useId, useRef } from 'react';
+import { useEffect, useMemo, useId } from 'react';
 import type { ChangeId, CommitId, Commit, BookmarkName } from '../../backend/src/repo-parser';
 import type { LayoutStackGraph, ParallelGroup, StackId } from './stackUtils';
-import { draggedChange, draggedFileChange, draggedBookmark } from './useDragDrop';
+import { draggedChange, draggedFileChange, draggedBookmark, getActiveDragMeta, clearActiveDragMeta } from './useDragDrop';
 import { StackComponent } from './StackComponent';
 
 type DragMeta =
@@ -12,13 +12,39 @@ type DragMeta =
   | { kind: 'external-text' }
   | { kind: 'unknown' };
 
-function extractDragMeta(event: React.DragEvent): DragMeta {
-  const change = draggedChange(event);
+function extractDragMeta(dataTransfer: DataTransfer | null): DragMeta {
+  const activeMeta = getActiveDragMeta();
+  if (activeMeta) {
+    if (activeMeta.kind === 'change') {
+      return {
+        kind: 'change',
+        commitId: activeMeta.commitId,
+        changeId: activeMeta.changeId,
+      };
+    }
+    if (activeMeta.kind === 'file-change') {
+      return {
+        kind: 'file-change',
+        fromCommitId: activeMeta.fromCommitId,
+        fromChangeId: activeMeta.fromChangeId,
+      };
+    }
+    return {
+      kind: 'bookmark',
+      bookmarkName: activeMeta.bookmarkName,
+    };
+  }
+
+  if (!dataTransfer) {
+    return { kind: 'unknown' };
+  }
+
+  const change = draggedChange({ dataTransfer });
   if (change) {
     return { kind: 'change', commitId: change.commitId, changeId: change.changeId };
   }
 
-  const fileChange = draggedFileChange(event);
+  const fileChange = draggedFileChange({ dataTransfer });
   if (fileChange) {
     return {
       kind: 'file-change',
@@ -27,16 +53,18 @@ function extractDragMeta(event: React.DragEvent): DragMeta {
     };
   }
 
-  const bookmark = draggedBookmark(event);
+  const bookmark = draggedBookmark({ dataTransfer });
   if (bookmark) {
     return { kind: 'bookmark', bookmarkName: bookmark.bookmarkName };
   }
 
-  if (event.dataTransfer.types.includes('Files')) {
+  const dataTransferTypes = Array.from(dataTransfer.types);
+
+  if (dataTransferTypes.includes('Files')) {
     return { kind: 'external-file' };
   }
 
-  if (event.dataTransfer.types.includes('text/plain')) {
+  if (dataTransferTypes.includes('text/plain')) {
     return { kind: 'external-text' };
   }
 
@@ -87,6 +115,54 @@ function clearRootDragAttributes(element: HTMLDivElement) {
   delete element.dataset.dragFromCommitId;
   delete element.dataset.dragFromChangeId;
   delete element.dataset.dragBookmarkName;
+}
+
+interface RootDragState {
+  active: boolean;
+  meta: DragMeta;
+}
+
+const inactiveRootDragState: RootDragState = { active: false, meta: { kind: 'unknown' } };
+
+function logRootDragState(source: string, state: RootDragState, types: readonly string[]) {
+  console.info('[StackGraph][drag-state]', {
+    source,
+    active: state.active,
+    meta: state.meta,
+    dataTransferTypes: types,
+  });
+}
+
+function applyRootDragState(element: HTMLDivElement, state: RootDragState) {
+  if (!state.active) {
+    clearRootDragAttributes(element);
+    return;
+  }
+  applyRootDragAttributes(element, state.meta);
+}
+
+function deriveRootDragState(dataTransfer: DataTransfer | null): { state: RootDragState; types: readonly string[] } {
+  const types = dataTransfer ? Array.from(dataTransfer.types) : [];
+  const meta = extractDragMeta(dataTransfer ?? null);
+  if (meta.kind === 'unknown' && dataTransfer) {
+    try {
+      const rawPayload = dataTransfer.getData('application/json');
+      if (rawPayload) {
+        console.warn('[StackGraph][drag-state] unresolved drag meta despite payload', { types, rawPayload });
+      }
+    } catch (error) {
+      console.warn('[StackGraph][drag-state] failed to inspect drag payload', { error, types });
+    }
+  }
+  return { state: { active: true, meta }, types };
+}
+
+function scheduleAfterDragStart(callback: () => void) {
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(callback);
+    return;
+  }
+  void Promise.resolve().then(callback);
 }
 
 interface SplitArrowProps {
@@ -399,27 +475,38 @@ export function StackGraphComponent({
     return levels;
   }, [stacks, rootStacks, stackToGroup, parallelGroups]);
 
-  const activeInternalDrags = useRef(0);
-
   const handleRootDragStart = (event: React.DragEvent<HTMLDivElement>) => {
-    activeInternalDrags.current += 1;
-    console.log('[StackGraph] dragstart', {
-      activeInternalDrags: activeInternalDrags.current,
-      target: event.currentTarget,
+    const rootElement = event.currentTarget;
+    applyRootDragState(rootElement, { active: true, meta: { kind: 'unknown' } });
+    logRootDragState('dragstart:init', { active: true, meta: { kind: 'unknown' } }, []);
+    const dataTransfer = event.dataTransfer ?? null;
+    scheduleAfterDragStart(() => {
+      const { state, types } = deriveRootDragState(dataTransfer);
+      logRootDragState('dragstart:resolved', state, types);
+      applyRootDragState(rootElement, state);
     });
-    const meta = extractDragMeta(event);
-    applyRootDragAttributes(event.currentTarget, meta);
+  };
+
+  const handleRootDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    const rootElement = event.currentTarget;
+    const { state, types } = deriveRootDragState(event.dataTransfer ?? null);
+    logRootDragState('dragenter', state, types);
+    applyRootDragState(rootElement, state);
+  };
+
+  const handleRootDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+    logRootDragState('dragleave', inactiveRootDragState, []);
+    applyRootDragState(event.currentTarget, inactiveRootDragState);
   };
 
   const handleRootDragEnd = (event: React.DragEvent<HTMLDivElement>) => {
-    activeInternalDrags.current = Math.max(0, activeInternalDrags.current - 1);
-    console.log('[StackGraph] dragend', {
-      activeInternalDrags: activeInternalDrags.current,
-      target: event.currentTarget,
-    });
-    if (activeInternalDrags.current === 0) {
-      clearRootDragAttributes(event.currentTarget);
-    }
+    logRootDragState('dragend', inactiveRootDragState, []);
+    applyRootDragState(event.currentTarget, inactiveRootDragState);
+    clearActiveDragMeta();
   };
 
   if (Object.keys(stacks).length === 0) {
@@ -444,6 +531,8 @@ export function StackGraphComponent({
     <div
       data-stack-graph-root="true"
       onDragStartCapture={handleRootDragStart}
+      onDragEnterCapture={handleRootDragEnter}
+      onDragLeaveCapture={handleRootDragLeave}
       onDragEndCapture={handleRootDragEnd}
       style={{
         padding: '20px',

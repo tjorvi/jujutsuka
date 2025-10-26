@@ -28,12 +28,34 @@ const bookmarkDragDataSchema = z.object({
 });
 export type BookmarkDragData = z.infer<typeof bookmarkDragDataSchema>;
 
+type DragEventLike = { dataTransfer: DataTransfer };
+
+type ActiveDragMeta =
+  | { kind: 'change'; commitId: CommitId; changeId: ChangeId }
+  | { kind: 'file-change'; fromCommitId: CommitId; fromChangeId: ChangeId }
+  | { kind: 'bookmark'; bookmarkName: BookmarkName };
+
+let currentActiveDragMeta: ActiveDragMeta | null = null;
+
+function setActiveDragMeta(meta: ActiveDragMeta | null) {
+  currentActiveDragMeta = meta;
+}
+
+export function getActiveDragMeta(): ActiveDragMeta | null {
+  return currentActiveDragMeta;
+}
+
+export function clearActiveDragMeta() {
+  currentActiveDragMeta = null;
+}
+
 export function dragChange(e: React.DragEvent, data: ChangeDragData) {
   e.dataTransfer.setData('application/json', JSON.stringify(data));
   e.dataTransfer.effectAllowed = 'move';
+  setActiveDragMeta({ kind: 'change', commitId: data.commitId, changeId: data.changeId });
 }
 
-export function draggedChange(e: React.DragEvent): ChangeDragData | null {
+export function draggedChange(e: DragEventLike): ChangeDragData | null {
   const data = e.dataTransfer.getData('application/json');
   if (!data) return null;
   try {
@@ -46,9 +68,14 @@ export function draggedChange(e: React.DragEvent): ChangeDragData | null {
 
 export function dragFileChange(e: React.DragEvent, data: FileChangeDragData) {
   e.dataTransfer.setData('application/json', JSON.stringify(data));
+  setActiveDragMeta({
+    kind: 'file-change',
+    fromCommitId: data.fromCommitId,
+    fromChangeId: data.fromChangeId,
+  });
 }
 
-export function draggedFileChange(e: React.DragEvent) {
+export function draggedFileChange(e: DragEventLike) {
   const data = e.dataTransfer.getData('application/json');
   if (!data) return null;
   try {
@@ -62,9 +89,10 @@ export function draggedFileChange(e: React.DragEvent) {
 export function dragBookmark(e: React.DragEvent, data: BookmarkDragData) {
   e.dataTransfer.setData('application/json', JSON.stringify(data));
   e.dataTransfer.effectAllowed = 'move';
+  setActiveDragMeta({ kind: 'bookmark', bookmarkName: data.bookmarkName });
 }
 
-export function draggedBookmark(e: React.DragEvent): BookmarkDragData | null {
+export function draggedBookmark(e: DragEventLike): BookmarkDragData | null {
   const data = e.dataTransfer.getData('application/json');
   if (!data) return null;
   try {
