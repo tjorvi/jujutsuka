@@ -194,96 +194,74 @@ export function StackComponent({
   }, [stack.commits, commitGraph]);
 
   return (
-    <>
-      <svg
-        width="12"
-        height="12"
-        style={{
-          display: 'block',
-          margin: '0 auto',
-        }}
-      >
-        <circle r="2" cx="6" cy="6" fill="black" />
-      </svg>
+    <div
+      className={styles.stackContainer}
+      data-parallel={isInParallelGroup ? 'true' : 'false'}
+    >
       <div
-        className={styles.stackContainer}
-        data-parallel={isInParallelGroup ? 'true' : 'false'}
-      >
-        <div
-          style={{
-            fontSize: '12px',
-            fontWeight: 'bold',
-            marginBottom: '8px',
-            color: isInParallelGroup ? '#7c3aed' : '#6b7280',
-          }}
-        >
-          {stack.commits.length} commit{stack.commits.length > 1 ? 's' : ''}
-        </div>
-
-        {commitsInDisplayOrder[0] && (
-          <DropZone position={{ kind: 'after', commit: commitsInDisplayOrder[0] }} />
-        )}
-
-        {commitsInDisplayOrder.map((commitId, index) => {
-          const commit = commitGraph[commitId]?.commit;
-          if (!commit) {
-            return null;
-          }
-
-          const isSelected = selectedCommitId === commitId;
-          const isCurrent = currentCommitId === commitId;
-          const isDivergent = divergentChangeIds.has(commit.changeId);
-          const nextCommitId = commitsInDisplayOrder[index + 1];
-          const stats = commitStats[commitId];
-          const isEmpty = (!stats || (stats.additions === 0 && stats.deletions === 0)) &&
-            (commit.description === '' || commit.description === '(no description)');
-          const commitBookmarks = bookmarksByCommit[commitId] ?? [];
-
-          console.log('Commit', commitId.slice(0, 8), {
-            description: commit.description,
-            stats,
-            isEmpty,
-            hasStats: !!stats,
-            additions: stats?.additions,
-            deletions: stats?.deletions,
-            bookmarks: commitBookmarks,
-          });
-
-          return (
-            <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <ChangeCard
-                commitId={commitId}
-                commit={commit}
-                stats={stats}
-                isInParallelGroup={isInParallelGroup}
-                isSelected={isSelected}
-                isCurrent={isCurrent}
-                isDivergent={isDivergent}
-                isEmpty={isEmpty}
-                bookmarks={commitBookmarks}
-                onCommitSelect={onCommitSelect}
-              />
-              <DropZone
-                position={
-                  nextCommitId
-                    ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
-                    : { kind: 'before', commit: commitId }
-                }
-              />
-            </div>
-          );
-        })}
-      </div>
-      <svg
-        width="12"
-        height="12"
         style={{
-          display: 'block',
-          margin: '0 auto',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          marginBottom: '8px',
+          color: isInParallelGroup ? '#7c3aed' : '#6b7280',
         }}
       >
-        <path d="M0,12 L6,0 L12,12" fill="black" />
-      </svg>
-    </>
+        {stack.commits.length} commit{stack.commits.length > 1 ? 's' : ''}
+      </div>
+
+      {commitsInDisplayOrder[0] && (
+        <DropZone position={{ kind: 'after', commit: commitsInDisplayOrder[0] }} />
+      )}
+
+      {commitsInDisplayOrder.map((commitId, index) => {
+        const commit = commitGraph[commitId]?.commit;
+        if (!commit) {
+          return null;
+        }
+
+        const isSelected = selectedCommitId === commitId;
+        const isCurrent = currentCommitId === commitId;
+        const isDivergent = divergentChangeIds.has(commit.changeId);
+        const nextCommitId = commitsInDisplayOrder[index + 1];
+        const stats = commitStats[commitId];
+        const isEmpty = (!stats || (stats.additions === 0 && stats.deletions === 0)) &&
+          (commit.description === '' || commit.description === '(no description)');
+        const commitBookmarks = bookmarksByCommit[commitId] ?? [];
+
+        console.log('Commit', commitId.slice(0, 8), {
+          description: commit.description,
+          stats,
+          isEmpty,
+          hasStats: !!stats,
+          additions: stats?.additions,
+          deletions: stats?.deletions,
+          bookmarks: commitBookmarks,
+        });
+
+        return (
+          <div key={commitId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <ChangeCard
+              commitId={commitId}
+              commit={commit}
+              stats={stats}
+              isInParallelGroup={isInParallelGroup}
+              isSelected={isSelected}
+              isCurrent={isCurrent}
+              isDivergent={isDivergent}
+              isEmpty={isEmpty}
+              bookmarks={commitBookmarks}
+              onCommitSelect={onCommitSelect}
+            />
+            <DropZone
+              position={
+                nextCommitId
+                  ? { kind: 'between', beforeCommit: nextCommitId, afterCommit: commitId }
+                  : { kind: 'before', commit: commitId }
+              }
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }

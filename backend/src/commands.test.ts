@@ -442,6 +442,27 @@ describe('Git Commands', () => {
     });
   });
 
+  describe('executeRebase regressions', () => {
+    it('places a commit between two neighbors in ancestor order', async () => {
+      const commit1 = await createCommit(repo, 'First', { 'file1.txt': 'c1' });
+      const commit2 = await createCommit(repo, 'Second', { 'file2.txt': 'c2' });
+      const commit3 = await createCommit(repo, 'Third', { 'file3.txt': 'c3' });
+
+      await executeRebase(
+        repo.path,
+        commit3.commitId,
+        {
+          type: 'between',
+          beforeCommitId: commit1.commitId,
+          afterCommitId: commit2.commitId,
+        }
+      );
+
+      await assertParentChild(repo, commit3.changeId, commit1.changeId);
+      await assertParentChild(repo, commit2.changeId, commit3.changeId);
+    });
+  });
+
   // TODO: re-enable once split/rebase command behaviour is reliable end-to-end.
   describe.skip('Complex scenarios', () => {
     it('should handle a series of split and move operations', async () => {

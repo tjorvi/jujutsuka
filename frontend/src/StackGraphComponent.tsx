@@ -592,6 +592,7 @@ export function StackGraphComponent({
                         flexShrink: 0,
                       }}
                     >
+                      <OutboundMarker />
                       <StackComponent
                         stack={stack}
                         commitGraph={commitGraph}
@@ -601,6 +602,7 @@ export function StackGraphComponent({
                         divergentChangeIds={divergentChangeIds}
                         onCommitSelect={handleCommitSelect}
                       />
+                      <InboundMarker />
                     </div>
                   );
                 })}
@@ -714,3 +716,33 @@ export function StackGraphComponent({
     </div>
   );
 }
+
+
+function InboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
+  return <svg
+    ref={ref}
+    width="12"
+    height="12"
+    style={{
+      display: 'block',
+      margin: '0 auto',
+    }}
+  >
+    <path d="M0,12 L6,0 L12,12" fill="black" />
+  </svg>;
+}
+
+function OutboundMarker({ ref }: { ref?: React.Ref<SVGSVGElement> }) {
+  return <svg
+    ref={ref}
+    width="12"
+    height="12"
+    style={{
+      display: 'block',
+      margin: '0 auto',
+    }}
+  >
+    <circle r="2" cx="6" cy="6" fill="black" />
+  </svg>;
+}
+
