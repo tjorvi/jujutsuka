@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useState } from 'react';
+import { useMemo, useRef, useEffect, useState, useId } from 'react';
 import type { ChangeId, CommitId, Commit, BookmarkName } from "../../backend/src/repo-parser";
 import type { Stack, StackId } from "./stackUtils";
 import type { ParallelGroup, LayoutStackGraph } from "./stackUtils";
@@ -318,7 +318,7 @@ function StackComponent({
     }
   }, [stack.commits, commitGraph]);
 
-  return (
+  return (<>
     <div
       className={styles.stackContainer}
       data-parallel={isInParallelGroup ? 'true' : 'false'}
@@ -617,6 +617,11 @@ function StackComponent({
         );
       })}
     </div>
+    <svg width="12" height="12" style={{
+    }}>
+      <path d="M0,12 L6,0 L12,12" fill="black" />
+    </svg>
+    </>
   );
 }
 
@@ -627,21 +632,84 @@ interface SplitArrowProps {
 }
 
 function SplitArrow({ count, stackWidth, gap }: SplitArrowProps) {
-  const totalWidth = count * stackWidth + (count - 1) * gap;
-  const height = 40;
+  const branchCount = Math.max(count, 1);
+  const totalWidth = branchCount * stackWidth + (branchCount - 1) * gap;
+  const height = 56;
+  const topPadding = 8;
+  const bottomPadding = 8;
+  const stemLength = 18;
+  const arrowHeadLength = 12;
+  const strokeWidth = 3;
+  const color = '#f59e0b';
+
+  const centerX = totalWidth / 2;
+  const bottomY = height - bottomPadding;
+  const stemTopY = bottomY - stemLength;
+  const arrowBaseY = topPadding + arrowHeadLength;
+  const curveStrength = Math.max((stemTopY - arrowBaseY) * 0.45, 0);
+
+  const rawMarkerId = useId();
+  const markerId = `split-arrow-${rawMarkerId.replace(/:/g, '')}`;
+
+  const branchCenters = useMemo(
+    () => Array.from({ length: branchCount }, (_, index) => (stackWidth / 2) + index * (stackWidth + gap)),
+    [branchCount, stackWidth, gap],
+  );
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      padding: '8px 0',
-      width: '100%',
-    }}>
-      <svg width={totalWidth} height={height} style={{ overflow: 'visible' }}>
-        {/* Split arrows go here - you'll implement the actual lines */}
-        <text x={totalWidth / 2} y={height / 2} textAnchor="middle" fill="#f59e0b" fontSize="14">
-          Split ({count})
-        </text>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        width: '100%',
+      }}
+    >
+      <svg
+        width={totalWidth}
+        height={height}
+        style={{ overflow: 'visible' }}
+        aria-hidden="true"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerWidth="6"
+            markerHeight="6"
+            refX="3"
+            refY="3"
+            orient="0"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,6 L3,0 L6,6" fill={color} />
+          </marker>
+        </defs>
+
+        <line
+          x1={centerX}
+          y1={bottomY}
+          x2={centerX}
+          y2={stemTopY}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+
+        {branchCenters.map((targetX) => (
+          <path
+            key={targetX}
+            d={[
+              `M ${centerX} ${stemTopY}`,
+              `C ${centerX} ${stemTopY - curveStrength} ${targetX} ${arrowBaseY + curveStrength} ${targetX} ${arrowBaseY}`,
+              `L ${targetX} ${topPadding}`,
+            ].join(' ')}
+            fill="none"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            markerEnd={`url(#${markerId})`}
+          />
+        ))}
       </svg>
     </div>
   );
@@ -654,21 +722,82 @@ interface MergeArrowProps {
 }
 
 function MergeArrow({ count, stackWidth, gap }: MergeArrowProps) {
-  const totalWidth = count * stackWidth + (count - 1) * gap;
-  const height = 40;
+  const branchCount = Math.max(count, 1);
+  const totalWidth = branchCount * stackWidth + (branchCount - 1) * gap;
+  const height = 56;
+  const topPadding = 8;
+  const bottomPadding = 8;
+  const startVertical = 18;
+  const arrowHeadLength = 12;
+  const strokeWidth = 3;
+  const color = '#10b981';
+
+  const centerX = totalWidth / 2;
+  const bottomY = height - bottomPadding;
+  const startY = bottomY - startVertical;
+  const arrowBaseY = topPadding + arrowHeadLength;
+  const curveStrength = Math.max((startY - arrowBaseY) * 0.45, 0);
+
+  const rawMarkerId = useId();
+  const markerId = `merge-arrow-${rawMarkerId.replace(/:/g, '')}`;
+
+  const branchStarts = useMemo(
+    () => Array.from({ length: branchCount }, (_, index) => (stackWidth / 2) + index * (stackWidth + gap)),
+    [branchCount, stackWidth, gap],
+  );
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      padding: '8px 0',
-      width: '100%',
-    }}>
-      <svg width={totalWidth} height={height} style={{ overflow: 'visible' }}>
-        {/* Merge arrows go here - you'll implement the actual lines */}
-        <text x={totalWidth / 2} y={height / 2} textAnchor="middle" fill="#10b981" fontSize="14">
-          Merge ({count})
-        </text>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        width: '100%',
+      }}
+    >
+      <svg
+        width={totalWidth}
+        height={height}
+        style={{ overflow: 'visible' }}
+        aria-hidden="true"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerWidth="6"
+            markerHeight="6"
+            refX="3"
+            refY="3"
+            orient="0"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,6 L3,0 L6,6" fill={color} />
+          </marker>
+        </defs>
+
+        {branchStarts.map((startX) => (
+          <path
+            key={startX}
+            d={[
+              `M ${startX} ${bottomY}`,
+              `L ${startX} ${startY}`,
+              `C ${startX} ${startY - curveStrength} ${centerX} ${arrowBaseY + curveStrength} ${centerX} ${arrowBaseY}`,
+            ].join(' ')}
+            fill="none"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+
+        <path
+          d={`M ${centerX} ${arrowBaseY} L ${centerX} ${topPadding}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          markerEnd={`url(#${markerId})`}
+        />
       </svg>
     </div>
   );
