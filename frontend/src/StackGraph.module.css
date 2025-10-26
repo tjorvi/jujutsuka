@@ -106,6 +106,9 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"],
   border: 1px solid transparent;
   border-left: 3px solid #3b82f6;
   will-change: transform, opacity;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 320px;
 }
 
 .commitCard:active {
@@ -238,6 +241,21 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"],
 }
 
 /* Empty commit + selected (but not current) */
+.commitDescription {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 4px 0;
+  color: #111827;
+  line-height: 1.2;
+  overflow: hidden;
+  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .commitCard[data-empty="true"][data-selected="true"]:not([data-current="true"]) {
   background: #e0f2fe;
   border: 1px dashed #0284c7;
@@ -292,6 +310,8 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"],
   background: white;
   padding: 12px;
   min-width: 200px;
+  max-width: 340px;
+  width: 100%;
   border: 2px solid #3b82f6;
   margin: 8px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);

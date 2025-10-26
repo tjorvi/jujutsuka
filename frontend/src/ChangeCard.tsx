@@ -96,6 +96,15 @@ export function ChangeCard({
   const [isBeingDragged, setIsBeingDragged] = useState(false);
 
   const sizeIndicator = useMemo(() => getCommitSizeIndicator(stats), [stats]);
+  const trimmedDescription = useMemo(() => commit.description.trim(), [commit.description]);
+  const summaryDescription = useMemo(() => {
+    if (trimmedDescription === '') {
+      return '';
+    }
+    const [firstLine] = trimmedDescription.split(/\r?\n/, 1);
+    return firstLine.trim();
+  }, [trimmedDescription]);
+  const hasDescription = summaryDescription.length > 0;
 
   const handleDragStart = (event: React.DragEvent) => {
     event.stopPropagation();
@@ -300,16 +309,11 @@ export function ChangeCard({
           )}
         </div>
         <div
-          style={{
-            fontSize: '14px',
-            fontWeight: 500,
-            margin: '4px 0',
-            color: '#111827',
-            wordWrap: 'break-word',
-            lineHeight: '1.2',
-          }}
+          className={styles.commitDescription}
+          title={trimmedDescription === '' ? undefined : trimmedDescription}
+          data-has-description={hasDescription ? 'true' : 'false'}
         >
-          {commit.description}
+          {summaryDescription}
         </div>
         <div style={{ fontSize: '11px', color: '#6b7280' }}>
           {commit.author.name} • {commitTimestamp}

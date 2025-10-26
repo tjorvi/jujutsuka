@@ -235,6 +235,57 @@ function createBranchingScenario(): Scenario {
   };
 }
 
+function createLongDescriptionScenario(): Scenario {
+  const root = createCommit({
+    id: makeCommitId(10),
+    changeId: makeChangeId(10),
+    description: 'Baseline for narrative stress-test',
+  });
+  const verbose = createCommit({
+    id: makeCommitId(11),
+    changeId: makeChangeId(11),
+    description: (
+      'Thread graph renders were collapsing whenever a teammate shipped an academic-thesis-length commit message.\n' +
+      'This scenario mirrors that disaster by stuffing the card with a novel:\n' +
+      'Chapter 1: The card stretches, panels groan, and connectors wobble.\n' +
+      'Chapter 2: Layout engines everywhere beg for mercy; we promise them a clamp soon.\n' +
+      'Chapter 3: Finally, the UI realises it can breathe again once we stop letting text run wild.'
+    ),
+    parents: [root.id],
+    dayOffset: 1,
+    author: {
+      name: 'Kento Nanami',
+      email: 'nanami@jujutsu.jp',
+    },
+  });
+  const runOn = createCommit({
+    id: makeCommitId(12),
+    changeId: makeChangeId(12),
+    description: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    parents: [verbose.id],
+    dayOffset: 2,
+    author: {
+      name: 'Satoru Gojo',
+      email: 'gojo@jujutsu.jp',
+    },
+  });
+
+  const commits = [root, verbose, runOn];
+  const commitGraph = buildCommitGraph(commits);
+  const stackGraph = enhanceStackGraphForLayout(buildStackGraph(commits));
+
+  return {
+    commitGraph,
+    stackGraph,
+    commits: {
+      root,
+      verbose,
+      runOn,
+    },
+    bookmarks: {},
+  };
+}
+
 export const GraphOverview: Story = {
   name: 'Graph Overview',
   render: () => {
@@ -321,6 +372,34 @@ export const CommitStates: Story = {
           commitGraph={scenario.commitGraph}
           selectedCommitId={scenario.commits.featurePolish.id}
           currentCommitId={scenario.commits.mainlineTip.id}
+          divergentChangeIds={divergent}
+          onCommitSelect={(commitId) => {
+            console.log('[story] commit selected', commitId);
+          }}
+        />
+      </DragDropProvider>
+    );
+  },
+};
+
+export const LongCommitMessages: Story = {
+  name: 'Long Commit Messages',
+  render: () => {
+    const scenario = createLongDescriptionScenario();
+    resetGraphStore();
+    configureGraphStore({
+      commitGraph: scenario.commitGraph,
+      currentCommitId: scenario.commits.runOn.id,
+    });
+
+    const divergent: ReadonlySet<ChangeId> = new Set<ChangeId>();
+
+    return (
+      <DragDropProvider>
+        <StackGraphComponent
+          stackGraph={scenario.stackGraph}
+          commitGraph={scenario.commitGraph}
+          currentCommitId={scenario.commits.runOn.id}
           divergentChangeIds={divergent}
           onCommitSelect={(commitId) => {
             console.log('[story] commit selected', commitId);

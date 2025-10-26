@@ -587,6 +587,8 @@ export function StackGraphComponent({
                       style={{
                         position: 'relative',
                         minWidth: '220px',
+                        maxWidth: '340px',
+                        width: '100%',
                         flexShrink: 0,
                       }}
                     >
