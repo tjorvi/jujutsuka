@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { queries, useQuery, trpc } from './api';
 import type { CommitId } from "../../backend/src/repo-parser";
 import { useGraphStore } from './graphStore';
-import { useEffect, useState } from 'react';
+import { DiffHunk, DiffLine } from './DiffHunk';
+import { groupDiffIntoHunks } from './diffParsing';
 
 interface DiffPanelProps {
   commitId?: CommitId;
@@ -42,38 +44,42 @@ function getStatusColor(status: string) {
   }
 }
 
-function renderDiffLines(diffText: string) {
-  return diffText.split('\n').map((line: string, index: number) => {
-    let color = '#e5e7eb';
-    let backgroundColor = 'transparent';
+interface DiffContentOptions {
+  readonly attachToHeader?: boolean;
+}
 
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      color = '#22c55e';
-      backgroundColor = '#052e16';
-    } else if (line.startsWith('-') && !line.startsWith('---')) {
-      color = '#ef4444';
-      backgroundColor = '#450a0a';
-    } else if (line.startsWith('@@')) {
-      color = '#3b82f6';
-      backgroundColor = '#172554';
-    } else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
-      color = '#9ca3af';
-    }
+function renderDiffContent(diff: string, options?: DiffContentOptions) {
+  const { metadata, hunks } = groupDiffIntoHunks(diff);
+  const attachToHeader = options?.attachToHeader ?? false;
 
-    return (
-      <div
-        key={index}
-        style={{
-          color,
-          backgroundColor,
-          paddingLeft: '8px',
-          paddingRight: '8px',
-        }}
-      >
-        {line || ' '}
-      </div>
-    );
-  });
+  return (
+    <div
+      style={{
+        background: '#0d1117',
+        border: '1px solid #3e3e3e',
+        borderTop: attachToHeader ? 'none' : '1px solid #3e3e3e',
+        borderRadius: attachToHeader ? '0 0 4px 4px' : '4px',
+        paddingTop: '8px',
+        paddingBottom: '8px',
+        overflowX: 'auto',
+      }}
+    >
+      {metadata.map((line, index) => (
+        <DiffLine key={`meta-${index}`} line={line} />
+      ))}
+      {hunks.map((hunk, index) => (
+        <DiffHunk
+          key={`${hunk.header}-${index}`}
+          header={hunk.header}
+          lines={hunk.lines}
+          defaultExpanded={index === 0}
+        />
+      ))}
+      {metadata.length === 0 && hunks.length === 0 && (
+        <DiffLine line="(No diff content)" />
+      )}
+    </div>
+  );
 }
 
 export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelProps) {
@@ -321,23 +327,7 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelPr
                 )}
 
                 {!fileDiff.loading && !fileDiff.error && (
-                  <pre style={{
-                    overflowX: 'auto',
-                    background: '#0d1117',
-                    padding: '12px',
-                    borderRadius: '0 0 4px 4px',
-                    border: '1px solid #3e3e3e',
-                    borderTop: 'none',
-                    fontSize: '13px',
-                    fontFamily: 'monospace',
-                    color: '#e5e7eb',
-                    margin: 0,
-                    whiteSpace: 'pre',
-                    textAlign: 'left',
-                    lineHeight: '1.4',
-                  }}>
-                    {renderDiffLines(fileDiff.diff)}
-                  </pre>
+                  renderDiffContent(fileDiff.diff, { attachToHeader: true })
                 )}
               </div>
             ))}
@@ -394,24 +384,9 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview }: DiffPanelPr
       )}
 
       {fileDiff.kind === 'success' && (
-        <pre style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'auto',
-          background: '#0d1117',
-          padding: '12px',
-          borderRadius: '4px',
-          border: '1px solid #3e3e3e',
-          fontSize: '13px',
-          fontFamily: 'monospace',
-          color: '#e5e7eb',
-          margin: 0,
-          whiteSpace: 'pre',
-          textAlign: 'left',
-          lineHeight: '1.4',
-        }}>
-          {renderDiffLines(String(fileDiff.data))}
-        </pre>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {renderDiffContent(String(fileDiff.data))}
+        </div>
       )}
     </div>
   );
