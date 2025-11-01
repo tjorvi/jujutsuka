@@ -261,7 +261,7 @@ export function StackComponent({
             <DropZone
               position={
                 nextCommitId
-                  ? { kind: 'between', beforeCommit: nextCommitId, afterCommit: commitId }
+                  ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
                   : { kind: 'before', commit: commitId }
               }
             />

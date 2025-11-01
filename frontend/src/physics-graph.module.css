@@ -1,0 +1,26 @@
+.graphArea {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    width: 800px;
+    height: 600px;
+    gap: 0.75rem;
+    padding: 1rem;
+    min-height: 18rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 0.5rem;
+    background: #f9fafb;
+}
+
+.node {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.5rem;
+    background: #e2e8f0;
+    color: #1f2937;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
