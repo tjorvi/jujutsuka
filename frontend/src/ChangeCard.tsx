@@ -137,22 +137,22 @@ export function ChangeCard({
     const hunk = draggedHunk(event);
 
     if (fileChange) {
-      handleFileDrop({ kind: 'existing', commit: commitId }, fileChange);
+      handleFileDrop({ kind: 'existing-commit', commit: commitId }, fileChange);
       return;
     }
 
     if (hunk) {
-      handleHunkDrop({ kind: 'existing', commit: commitId }, hunk);
+      handleHunkDrop({ kind: 'existing-commit', commit: commitId }, hunk);
       return;
     }
 
     if (bookmark) {
-      handleBookmarkDrop({ kind: 'existing', commit: commitId }, bookmark);
+      handleBookmarkDrop({ kind: 'existing-commit', commit: commitId }, bookmark);
       return;
     }
 
     if (change) {
-      handleCommitDrop({ kind: 'existing', commit: commitId }, change, { mode: 'squash' });
+      handleCommitDrop({ kind: 'existing-commit', commit: commitId }, change, { mode: 'squash' });
     }
   };
 

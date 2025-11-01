@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { match } from 'ts-pattern';
 import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand, HunkRange } from './commands';
 import type { DropPosition } from './dropPosition';
@@ -69,45 +70,32 @@ function addCommitFromPosition(position: DropPosition | null | undefined, addCom
   if (!position) {
     return;
   }
-  switch (position.kind) {
-    case 'before':
-    case 'after':
-    case 'existing':
-      addCommit(position.commit);
-      return;
-    case 'between':
-      addCommit(position.beforeCommit);
-      addCommit(position.afterCommit);
-      return;
-    case 'new-branch':
-      addCommit(position.commit);
-      return;
-    default:
-      return;
-  }
+  match(position)
+    .with({ kind: 'before' }, (p) => addCommit(p.commit))
+    .with({ kind: 'after' }, (p) => addCommit(p.commit))
+    .with({ kind: 'existing-commit' }, (p) => addCommit(p.commit))
+    .with({ kind: 'between-commits' }, (p) => {
+      addCommit(p.beforeCommit);
+      addCommit(p.afterCommit);
+    })
+    .with({ kind: 'new-branch' }, (p) => addCommit(p.commit))
+    .exhaustive();
 }
 
 function addCommitFromLegacyTarget(target: CommandTarget | null | undefined, addCommit: (id: CommitId) => void) {
   if (!target) {
     return;
   }
-  switch (target.type) {
-    case 'before':
-    case 'after':
-    case 'existing-commit':
-      addCommit(target.commitId);
-      return;
-    case 'between':
-    case 'new-commit-between':
-      addCommit(target.beforeCommitId);
-      addCommit(target.afterCommitId);
-      return;
-    case 'new-branch':
-      addCommit(target.fromCommitId);
-      return;
-    default:
-      return;
-  }
+  match(target)
+    .with({ kind: 'before' }, (t) => addCommit(t.commit))
+    .with({ kind: 'after' }, (t) => addCommit(t.commit))
+    .with({ kind: 'existing-commit' }, (t) => addCommit(t.commit))
+    .with({ kind: 'between-commits' }, (t) => {
+      addCommit(t.beforeCommit);
+      addCommit(t.afterCommit);
+    })
+    .with({ kind: 'new-branch' }, (t) => addCommit(t.commit))
+    .exhaustive();
 }
 
 interface CommitAssociation {
@@ -155,68 +143,73 @@ function deriveOperationContext(
   };
 
   const collectFromCommand = (command: GitCommand | IntentionCommand) => {
-    switch (command.type) {
-      case 'move-file-to-change':
-        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
-        addCommit(command.targetChangeId, command.targetChangeStableId ?? null);
-        return;
-      case 'split-file-from-change':
-        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
-        addCommitFromPosition(command.position, addCommit);
-        return;
-      case 'rebase-change':
-        addCommit(command.changeId, command.changeStableId ?? null);
-        addCommitFromPosition(command.position, addCommit);
-        return;
-      case 'reorder-change':
-        addCommit(command.changeId, command.changeStableId ?? null);
-        addCommitFromPosition(command.position, addCommit);
-        return;
-      case 'squash-change-into':
-        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
-        addCommit(command.targetChangeId, command.targetChangeStableId ?? null);
-        return;
-      case 'split-at-evolog':
-        addCommit(command.changeId, command.changeStableId ?? null);
-        addCommit(command.entryCommitId, command.entryChangeStableId ?? null);
-        return;
-      case 'create-new-change':
-        addCommitFromPosition(command.position, addCommit);
-        return;
-      case 'update-change-description':
-      case 'checkout-change':
-      case 'abandon-change':
-        addCommit(command.commitId, command.changeStableId ?? null);
-        return;
-      case 'move-bookmark':
-      case 'add-bookmark':
-        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
-        return;
-      case 'delete-bookmark':
-        return;
-      case 'hunk-split':
-        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommitFromPosition(command.position, addCommit);
-        return;
-      case 'move-files':
-        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
-        return;
-      case 'rebase':
-        addCommit(command.commitId, command.changeStableId ?? null);
-        addCommitFromLegacyTarget(command.target, addCommit);
-        return;
-      case 'squash':
-        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
-        return;
-      case 'split':
-        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommitFromLegacyTarget(command.target, addCommit);
-        return;
-      default:
-        return;
-    }
+    match(command)
+      .with({ type: 'move-file-to-change' }, (cmd) => {
+        addCommit(cmd.sourceChangeId, cmd.sourceChangeStableId ?? null);
+        addCommit(cmd.targetChangeId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'split-file-from-change' }, (cmd) => {
+        addCommit(cmd.sourceChangeId, cmd.sourceChangeStableId ?? null);
+        addCommitFromPosition(cmd.position, addCommit);
+      })
+      .with({ type: 'rebase-change' }, (cmd) => {
+        addCommit(cmd.changeId, cmd.changeStableId ?? null);
+        addCommitFromPosition(cmd.position, addCommit);
+      })
+      .with({ type: 'reorder-change' }, (cmd) => {
+        addCommit(cmd.changeId, cmd.changeStableId ?? null);
+        addCommitFromPosition(cmd.position, addCommit);
+      })
+      .with({ type: 'squash-change-into' }, (cmd) => {
+        addCommit(cmd.sourceChangeId, cmd.sourceChangeStableId ?? null);
+        addCommit(cmd.targetChangeId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'split-at-evolog' }, (cmd) => {
+        addCommit(cmd.changeId, cmd.changeStableId ?? null);
+        addCommit(cmd.entryCommitId, cmd.entryChangeStableId ?? null);
+      })
+      .with({ type: 'create-new-change' }, (cmd) => {
+        addCommitFromPosition(cmd.position, addCommit);
+      })
+      .with({ type: 'update-change-description' }, (cmd) => {
+        addCommit(cmd.commitId, cmd.changeStableId ?? null);
+      })
+      .with({ type: 'checkout-change' }, (cmd) => {
+        addCommit(cmd.commitId, cmd.changeStableId ?? null);
+      })
+      .with({ type: 'abandon-change' }, (cmd) => {
+        addCommit(cmd.commitId, cmd.changeStableId ?? null);
+      })
+      .with({ type: 'move-bookmark' }, (cmd) => {
+        addCommit(cmd.targetCommitId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'add-bookmark' }, (cmd) => {
+        addCommit(cmd.targetCommitId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'delete-bookmark' }, () => {
+        // No commits to add
+      })
+      .with({ type: 'hunk-split' }, (cmd) => {
+        addCommit(cmd.sourceCommitId, cmd.sourceChangeStableId ?? null);
+        addCommitFromPosition(cmd.position, addCommit);
+      })
+      .with({ type: 'move-files' }, (cmd) => {
+        addCommit(cmd.sourceCommitId, cmd.sourceChangeStableId ?? null);
+        addCommit(cmd.targetCommitId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'rebase' }, (cmd) => {
+        addCommit(cmd.commitId, cmd.changeStableId ?? null);
+        addCommitFromLegacyTarget(cmd.target, addCommit);
+      })
+      .with({ type: 'squash' }, (cmd) => {
+        addCommit(cmd.sourceCommitId, cmd.sourceChangeStableId ?? null);
+        addCommit(cmd.targetCommitId, cmd.targetChangeStableId ?? null);
+      })
+      .with({ type: 'split' }, (cmd) => {
+        addCommit(cmd.sourceCommitId, cmd.sourceChangeStableId ?? null);
+        addCommitFromLegacyTarget(cmd.target, addCommit);
+      })
+      .exhaustive();
   };
 
   if (kind.type === 'intention-command') {
@@ -234,48 +227,28 @@ function deriveOperationContext(
   };
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled variant: ${JSON.stringify(value)}`);
-}
-
 function shortId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
 }
 
 function summariseDropPosition(position: DropPosition): string {
-  switch (position.kind) {
-    case 'before':
-      return `before ${shortId(position.commit)}`;
-    case 'after':
-      return `after ${shortId(position.commit)}`;
-    case 'between':
-      return `after ${shortId(position.beforeCommit)} and before ${shortId(position.afterCommit)}`;
-    case 'new-branch':
-      return `new branch from ${shortId(position.commit)}`;
-    case 'existing':
-      return `existing commit ${shortId(position.commit)}`;
-    default:
-      return assertNever(position as never);
-  }
+  return match(position)
+    .with({ kind: 'before' }, (p) => `before ${shortId(p.commit)}`)
+    .with({ kind: 'after' }, (p) => `after ${shortId(p.commit)}`)
+    .with({ kind: 'between-commits' }, (p) => `after ${shortId(p.beforeCommit)} and before ${shortId(p.afterCommit)}`)
+    .with({ kind: 'new-branch' }, (p) => `new branch from ${shortId(p.commit)}`)
+    .with({ kind: 'existing-commit' }, (p) => `existing commit ${shortId(p.commit)}`)
+    .exhaustive();
 }
 
 function summariseCommandTarget(target: CommandTarget): string {
-  switch (target.type) {
-    case 'before':
-      return `before ${shortId(target.commitId)}`;
-    case 'after':
-      return `after ${shortId(target.commitId)}`;
-    case 'between':
-      return `after ${shortId(target.beforeCommitId)} and before ${shortId(target.afterCommitId)}`;
-    case 'new-branch':
-      return `new branch from ${shortId(target.fromCommitId)}`;
-    case 'new-commit-between':
-      return `new commit after ${shortId(target.beforeCommitId)} and before ${shortId(target.afterCommitId)}`;
-    case 'existing-commit':
-      return `existing commit ${shortId(target.commitId)}`;
-    default:
-      return assertNever(target);
-  }
+  return match(target)
+    .with({ kind: 'before' }, (t) => `before ${shortId(t.commit)}`)
+    .with({ kind: 'after' }, (t) => `after ${shortId(t.commit)}`)
+    .with({ kind: 'between-commits' }, (t) => `after ${shortId(t.beforeCommit)} and before ${shortId(t.afterCommit)}`)
+    .with({ kind: 'new-branch' }, (t) => `new branch from ${shortId(t.commit)}`)
+    .with({ kind: 'existing-commit' }, (t) => `existing commit ${shortId(t.commit)}`)
+    .exhaustive();
 }
 
 function describeFileCount(files: readonly FileChange[]): string {
@@ -293,58 +266,54 @@ function describeFileCount(files: readonly FileChange[]): string {
 }
 
 function describeIntentionCommand(command: IntentionCommand): string {
-  switch (command.type) {
-    case 'move-file-to-change':
-      return `Move ${command.file.path} from ${shortId(command.sourceChangeId)} to ${shortId(command.targetChangeId)}`;
-    case 'split-file-from-change':
-      return `Split ${command.file.path} from ${shortId(command.sourceChangeId)} to ${summariseDropPosition(command.position)}`;
-    case 'rebase-change':
-      return `Rebase ${shortId(command.changeId)} onto ${summariseDropPosition(command.position)}`;
-    case 'reorder-change':
-      return `Reorder ${shortId(command.changeId)} to ${summariseDropPosition(command.position)}`;
-    case 'squash-change-into':
-      return `Squash ${shortId(command.sourceChangeId)} into ${shortId(command.targetChangeId)}`;
-    case 'split-at-evolog':
-      return `Split ${shortId(command.changeId)} at evolog entry ${shortId(command.entryCommitId)}`;
-    case 'create-new-change':
-      return `Create change at ${summariseDropPosition(command.position)} with ${describeFileCount(command.files)}`;
-    case 'update-change-description': {
-      const snippet = command.description.trim().replace(/\s+/g, ' ');
+  return match(command)
+    .with({ type: 'move-file-to-change' }, (cmd) =>
+      `Move ${cmd.file.path} from ${shortId(cmd.sourceChangeId)} to ${shortId(cmd.targetChangeId)}`)
+    .with({ type: 'split-file-from-change' }, (cmd) =>
+      `Split ${cmd.file.path} from ${shortId(cmd.sourceChangeId)} to ${summariseDropPosition(cmd.position)}`)
+    .with({ type: 'rebase-change' }, (cmd) =>
+      `Rebase ${shortId(cmd.changeId)} onto ${summariseDropPosition(cmd.position)}`)
+    .with({ type: 'reorder-change' }, (cmd) =>
+      `Reorder ${shortId(cmd.changeId)} to ${summariseDropPosition(cmd.position)}`)
+    .with({ type: 'squash-change-into' }, (cmd) =>
+      `Squash ${shortId(cmd.sourceChangeId)} into ${shortId(cmd.targetChangeId)}`)
+    .with({ type: 'split-at-evolog' }, (cmd) =>
+      `Split ${shortId(cmd.changeId)} at evolog entry ${shortId(cmd.entryCommitId)}`)
+    .with({ type: 'create-new-change' }, (cmd) =>
+      `Create change at ${summariseDropPosition(cmd.position)} with ${describeFileCount(cmd.files)}`)
+    .with({ type: 'update-change-description' }, (cmd) => {
+      const snippet = cmd.description.trim().replace(/\s+/g, ' ');
       const truncated = snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet;
-      return `Update description for ${shortId(command.commitId)} to "${truncated}"`;
-    }
-    case 'abandon-change':
-      return `Abandon change ${shortId(command.commitId)}`;
-    case 'checkout-change':
-      return `Checkout change ${shortId(command.commitId)}`;
-    case 'move-bookmark':
-      return `Move bookmark ${String(command.bookmarkName)} to ${shortId(command.targetCommitId)}`;
-    case 'delete-bookmark':
-      return `Delete bookmark ${String(command.bookmarkName)}`;
-    case 'add-bookmark':
-      return `Add bookmark ${String(command.bookmarkName)} at ${shortId(command.targetCommitId)}`;
-    case 'hunk-split': {
-      const count = command.hunkRanges.length;
-      return `Split ${count} hunk${count === 1 ? '' : 's'} from ${shortId(command.sourceCommitId)} to ${summariseDropPosition(command.position)}`;
-    }
-    default:
-      return assertNever(command);
-  }
+      return `Update description for ${shortId(cmd.commitId)} to "${truncated}"`;
+    })
+    .with({ type: 'abandon-change' }, (cmd) =>
+      `Abandon change ${shortId(cmd.commitId)}`)
+    .with({ type: 'checkout-change' }, (cmd) =>
+      `Checkout change ${shortId(cmd.commitId)}`)
+    .with({ type: 'move-bookmark' }, (cmd) =>
+      `Move bookmark ${String(cmd.bookmarkName)} to ${shortId(cmd.targetCommitId)}`)
+    .with({ type: 'delete-bookmark' }, (cmd) =>
+      `Delete bookmark ${String(cmd.bookmarkName)}`)
+    .with({ type: 'add-bookmark' }, (cmd) =>
+      `Add bookmark ${String(cmd.bookmarkName)} at ${shortId(cmd.targetCommitId)}`)
+    .with({ type: 'hunk-split' }, (cmd) => {
+      const count = cmd.hunkRanges.length;
+      return `Split ${count} hunk${count === 1 ? '' : 's'} from ${shortId(cmd.sourceCommitId)} to ${summariseDropPosition(cmd.position)}`;
+    })
+    .exhaustive();
 }
 
 function describeLegacyGitCommand(command: GitCommand): string {
-  switch (command.type) {
-    case 'rebase':
-      return `Legacy rebase ${shortId(command.commitId)} onto ${summariseCommandTarget(command.target)}`;
-    case 'squash':
-      return `Legacy squash ${shortId(command.sourceCommitId)} into ${shortId(command.targetCommitId)}`;
-    case 'split':
-      return `Legacy split ${shortId(command.sourceCommitId)} via ${summariseCommandTarget(command.target)} with ${describeFileCount(command.files)}`;
-    case 'move-files':
-      return `Legacy move ${describeFileCount(command.files)} from ${shortId(command.sourceCommitId)} to ${shortId(command.targetCommitId)}`;
-    default:
-      return describeIntentionCommand(command as IntentionCommand);
-  }
+  return match(command)
+    .with({ type: 'rebase' }, (cmd) =>
+      `Legacy rebase ${shortId(cmd.commitId)} onto ${summariseCommandTarget(cmd.target)}`)
+    .with({ type: 'squash' }, (cmd) =>
+      `Legacy squash ${shortId(cmd.sourceCommitId)} into ${shortId(cmd.targetCommitId)}`)
+    .with({ type: 'split' }, (cmd) =>
+      `Legacy split ${shortId(cmd.sourceCommitId)} via ${summariseCommandTarget(cmd.target)} with ${describeFileCount(cmd.files)}`)
+    .with({ type: 'move-files' }, (cmd) =>
+      `Legacy move ${describeFileCount(cmd.files)} from ${shortId(cmd.sourceCommitId)} to ${shortId(cmd.targetCommitId)}`)
+    .otherwise((cmd) => describeIntentionCommand(cmd as IntentionCommand));
 }
 
 interface GraphState {

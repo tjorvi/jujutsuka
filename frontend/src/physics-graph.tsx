@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 // import styles from "./physics-graph.module.css";
-import { Engine, Render, Runner, World, Bodies, Constraint, Mouse, MouseConstraint } from "matter-js";
+import { Engine, Render, Runner, World, Bodies, Mouse, MouseConstraint, Body } from "matter-js";
+// import { layoutSimple } from "./layout";
 
 type Graph = {
         nodes: number[];
@@ -11,21 +12,21 @@ export type PhysicsGraphProps = {
     graph: Graph;
 };
 
-const graphRoots = (nodes: number[], edges: [number, number][]) => {
-    const hasIncomingEdge = new Set<number>();
-    for (const [, to] of edges) {
-        hasIncomingEdge.add(to);
-    }
-    return nodes.filter(nodeId => !hasIncomingEdge.has(nodeId));
-}
+// const graphRoots = (nodes: number[], edges: [number, number][]) => {
+//     const hasIncomingEdge = new Set<number>();
+//     for (const [, to] of edges) {
+//         hasIncomingEdge.add(to);
+//     }
+//     return nodes.filter(nodeId => !hasIncomingEdge.has(nodeId));
+// }
 
-const graphLeaves = (nodes: number[], edges: [number, number][]) => {
-    const hasOutgoingEdge = new Set<number>();
-    for (const [from, ] of edges) {
-        hasOutgoingEdge.add(from);
-    }
-    return nodes.filter(nodeId => !hasOutgoingEdge.has(nodeId));
-}
+// const graphLeaves = (nodes: number[], edges: [number, number][]) => {
+//     const hasOutgoingEdge = new Set<number>();
+//     for (const [from, ] of edges) {
+//         hasOutgoingEdge.add(from);
+//     }
+//     return nodes.filter(nodeId => !hasOutgoingEdge.has(nodeId));
+// }
 
 export function PhysicsGraph({ graph }: PhysicsGraphProps) {
 
@@ -35,6 +36,8 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
     if (!hostRef.current) return;
 
     const width = 640, height = 400;
+
+    // const layout = layoutSimple(graph, () => ({ width: 48, height: 28 }));
 
     const engine = Engine.create();
     const world = engine.world;
@@ -47,7 +50,7 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
       options: { width, height, wireframes: false, background: "#f5f5f5" },
     });
 
-    const bodies: Record<number, Matter.Body> = {};
+    const bodies: Record<number, Body> = {};
     for (const nodeId of graph.nodes) {
         const node = Bodies.rectangle(
             Math.random() * (width - 100) + 50,
@@ -60,47 +63,47 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
         World.add(world, node);
     }
 
-    for (const rootId of graphRoots(graph.nodes, graph.edges)) {
-        const rootBody = bodies[rootId];
-        const rootConstraint = Constraint.create({
-            pointA: { x: width/2, y: height },
-            bodyB: rootBody,
-            pointB: { x: 0, y: 12 },
-            length: 0,
-            stiffness: 0.001,
-            damping: 0.1,
-        });
-        World.add(world, rootConstraint);
-    }
+    // for (const rootId of graphRoots(graph.nodes, graph.edges)) {
+    //     const rootBody = bodies[rootId];
+    //     const rootConstraint = Constraint.create({
+    //         pointA: { x: width/2, y: height },
+    //         bodyB: rootBody,
+    //         pointB: { x: 0, y: 12 },
+    //         length: 0,
+    //         stiffness: 0.001,
+    //         damping: 0.1,
+    //     });
+    //     World.add(world, rootConstraint);
+    // }
 
-    for (const leafId of graphLeaves(graph.nodes, graph.edges)) {
-        const leafBody = bodies[leafId];
-        const leafConstraint = Constraint.create({
-            bodyA: leafBody,
-            pointA: { x: 0, y: -12 },
-            pointB: { x: width/2, y: 0 },
-            length: 0,
-            stiffness: 0.001,
-            damping: 0.1,
-        });
-        World.add(world, leafConstraint);
-    }
+    // for (const leafId of graphLeaves(graph.nodes, graph.edges)) {
+    //     const leafBody = bodies[leafId];
+    //     const leafConstraint = Constraint.create({
+    //         bodyA: leafBody,
+    //         pointA: { x: 0, y: -12 },
+    //         pointB: { x: width/2, y: 0 },
+    //         length: 0,
+    //         stiffness: 0.001,
+    //         damping: 0.1,
+    //     });
+    //     World.add(world, leafConstraint);
+    // }
 
 
-    for (const [fromId, toId] of graph.edges) {
-        const fromBody = bodies[fromId];
-        const toBody = bodies[toId];
+    // for (const [fromId, toId] of graph.edges) {
+        // const fromBody = bodies[fromId];
+        // const toBody = bodies[toId];
 
-         const link = Constraint.create({
-            bodyA: fromBody,
-            bodyB: toBody,
-            pointA: { x: 0, y: -12 },
-            pointB: { x: 0, y: 12 },
-            length: 50,
-            stiffness: 0.1,
-            damping: 0.15,
-        });
-        World.add(world, [link]);
+        //  const link = Constraint.create({
+        //     bodyA: fromBody,
+        //     bodyB: toBody,
+        //     pointA: { x: 0, y: -12 },
+        //     pointB: { x: 0, y: 12 },
+        //     length: 50,
+        //     stiffness: 0.1,
+        //     damping: 0.15,
+        // });
+        // World.add(world, [link]);
         
         // const linkL = Constraint.create({
         //     bodyA: fromBody,
@@ -123,7 +126,7 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
         // });
 
         // World.add(world, [linkL, linkR]);
-    }
+    // }
 
     const ground = Bodies.rectangle(width / 2, height - 20, width, 40, { isStatic: true });
 

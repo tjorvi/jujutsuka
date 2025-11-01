@@ -336,25 +336,36 @@ export interface FileChange {
   deletions?: number;
 }
 
-// Target types for git operations
-export type CommandTarget = {
-  type: 'before' | 'after';
-  commitId: CommitId;
-} | {
-  type: 'between';
-  beforeCommitId: CommitId;
-  afterCommitId: CommitId;
-} | {
-  type: 'new-branch';
-  fromCommitId: CommitId;
-} | {
-  type: 'new-commit-between';
-  beforeCommitId: CommitId;
-  afterCommitId: CommitId;
-} | {
-  type: 'existing-commit';
-  commitId: CommitId;
-};
+/**
+ * Position type used throughout the application from UI to jj command execution.
+ * Represents a location where an operation should occur - the command context
+ * determines what actually happens at this position.
+ */
+export type Position =
+  | {
+      kind: 'before';
+      commit: CommitId;
+    }
+  | {
+      kind: 'after';
+      commit: CommitId;
+    }
+  | {
+      kind: 'between-commits';
+      beforeCommit: CommitId;
+      afterCommit: CommitId;
+    }
+  | {
+      kind: 'new-branch';
+      commit: CommitId;
+    }
+  | {
+      kind: 'existing-commit';
+      commit: CommitId;
+    };
+
+// Legacy alias for compatibility during migration
+export type CommandTarget = Position;
 
 /**
  * Evolution log entry for a commit
@@ -622,10 +633,10 @@ export async function executeHunkSplit(
   repoPath: string,
   sourceCommitId: CommitId,
   hunkRanges: HunkRange[],
-  target: CommandTarget,
+  position: Position,
   description?: string
 ): Promise<void> {
-  console.log(`✂️ Executing hunk split: ${sourceCommitId} ranges: ${hunkRanges.map(r => `${r.filePath}:${r.startLine}-${r.endLine}`).join(', ')} to ${JSON.stringify(target)}`);
+  console.log(`✂️ Executing hunk split: ${sourceCommitId} ranges: ${hunkRanges.map(r => `${r.filePath}:${r.startLine}-${r.endLine}`).join(', ')} to ${JSON.stringify(position)}`);
 
   // Group ranges by file
   const rangesByFile = new Map<string, HunkRange[]>();
@@ -659,21 +670,23 @@ export async function executeHunkSplit(
       }
     }
 
-    // Step 3: Create a new empty commit at the target location
+    // Step 3: Create a new empty commit at the position
     const newArgs: string[] = [];
-    if (target.type === 'before') {
-      newArgs.push('--insert-before', target.commitId);
-    } else if (target.type === 'after') {
-      newArgs.push('--insert-after', target.commitId);
-    } else if (target.type === 'new-commit-between') {
-      newArgs.push('--insert-after', target.beforeCommitId);
-      if (target.afterCommitId !== sourceCommitId) {
-        newArgs.push('--insert-before', target.afterCommitId);
+    if (position.kind === 'before') {
+      newArgs.push('--insert-before', position.commit);
+    } else if (position.kind === 'after') {
+      newArgs.push('--insert-after', position.commit);
+    } else if (position.kind === 'between-commits') {
+      newArgs.push('--insert-after', position.beforeCommit);
+      if (position.afterCommit !== sourceCommitId) {
+        newArgs.push('--insert-before', position.afterCommit);
       }
-    } else if (target.type === 'new-branch') {
-      throw new Error('new-branch target type not yet supported for hunk split');
+    } else if (position.kind === 'new-branch') {
+      newArgs.push('--destination', position.commit);
+    } else if (position.kind === 'existing-commit') {
+      throw new Error('existing-commit position not supported for hunk split - use evosquash instead');
     } else {
-      throw new Error(`Unsupported target type for hunk split: ${(target as any).type}`);
+      throw new Error(`Unsupported position kind for hunk split: ${(position as any).kind}`);
     }
 
     await executeJjCommand(repoPath, 'new', newArgs);
@@ -699,38 +712,34 @@ export async function executeHunkSplit(
  * Command execution functions
  */
 
-export async function executeRebase(repoPath: string, commitId: CommitId, target: CommandTarget): Promise<void> {
-  await match(target)
-    .with({ type: 'before' }, async (t) => {
-      // Move commit before target
-      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--insert-before', t.commitId]);
+export async function executeRebase(repoPath: string, commitId: CommitId, position: Position): Promise<void> {
+  await match(position)
+    .with({ kind: 'before' }, async (p) => {
+      // Move commit before position
+      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--insert-before', p.commit]);
     })
-    .with({ type: 'after' }, async (t) => {
-      // Move commit after target
-      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--insert-after', t.commitId]);
+    .with({ kind: 'after' }, async (p) => {
+      // Move commit after position
+      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--insert-after', p.commit]);
     })
-    .with({ type: 'between' }, async (t) => {
+    .with({ kind: 'between-commits' }, async (p) => {
       // Reorder commit between two neighbors
       await executeJjCommand(repoPath, 'rebase', [
         '-r',
         commitId,
         '--insert-after',
-        t.beforeCommitId,
+        p.beforeCommit,
         '--insert-before',
-        t.afterCommitId,
+        p.afterCommit,
       ]);
     })
-    .with({ type: 'new-branch' }, async (t) => {
+    .with({ kind: 'new-branch' }, async (p) => {
       // Create new branch from specified commit
-      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', t.fromCommitId]);
+      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', p.commit]);
     })
-    .with({ type: 'new-commit-between' }, async () => {
-      // Rebase doesn't directly support "between" - this might need special handling
-      throw new Error('Rebase to new-commit-between not supported');
-    })
-    .with({ type: 'existing-commit' }, async (t) => {
+    .with({ kind: 'existing-commit' }, async (p) => {
       // Rebase onto existing commit (same as 'after')
-      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', t.commitId]);
+      await executeJjCommand(repoPath, 'rebase', ['-r', commitId, '--destination', p.commit]);
     })
     .exhaustive();
 }
@@ -739,35 +748,27 @@ export async function executeAbandon(repoPath: string, commitId: CommitId): Prom
   await executeJjCommand(repoPath, 'abandon', ['-r', commitId]);
 }
 
-export async function executeCreateEmptyChange(repoPath: string, target: CommandTarget): Promise<void> {
-  await match(target)
-    .with({ type: 'before' }, async (t) => {
-      await executeJjCommand(repoPath, 'new', ['--insert-before', t.commitId]);
+export async function executeCreateEmptyChange(repoPath: string, position: Position): Promise<void> {
+  await match(position)
+    .with({ kind: 'before' }, async (p) => {
+      await executeJjCommand(repoPath, 'new', ['--insert-before', p.commit]);
     })
-    .with({ type: 'after' }, async (t) => {
-      await executeJjCommand(repoPath, 'new', ['--insert-after', t.commitId]);
+    .with({ kind: 'after' }, async (p) => {
+      await executeJjCommand(repoPath, 'new', ['--insert-after', p.commit]);
     })
-    .with({ type: 'between' }, async (t) => {
+    .with({ kind: 'between-commits' }, async (p) => {
       await executeJjCommand(repoPath, 'new', [
         '--insert-after',
-        t.beforeCommitId,
+        p.beforeCommit,
         '--insert-before',
-        t.afterCommitId,
+        p.afterCommit,
       ]);
     })
-    .with({ type: 'new-commit-between' }, async (t) => {
-      await executeJjCommand(repoPath, 'new', [
-        '--insert-after',
-        t.beforeCommitId,
-        '--insert-before',
-        t.afterCommitId,
-      ]);
+    .with({ kind: 'new-branch' }, async (p) => {
+      // Creating a new branch should fork from the commit without rebasing children.
+      await executeJjCommand(repoPath, 'new', [p.commit]);
     })
-    .with({ type: 'new-branch' }, async (t) => {
-      // Creating a new branch should fork from the target without rebasing children.
-      await executeJjCommand(repoPath, 'new', [t.fromCommitId]);
-    })
-    .with({ type: 'existing-commit' }, () => {
+    .with({ kind: 'existing-commit' }, () => {
       throw new Error('Cannot create a new empty change inside an existing commit');
     })
     .exhaustive();
@@ -797,52 +798,45 @@ export async function executeSplit(
   repoPath: string,
   sourceCommitId: CommitId,
   files: FileChange[],
-  target: CommandTarget
+  position: Position
 ): Promise<void> {
-  console.log(`✂️ Executing split: ${sourceCommitId} files: ${files.map(f => f.path).join(', ')} to ${JSON.stringify(target)}`);
+  console.log(`✂️ Executing split: ${sourceCommitId} files: ${files.map(f => f.path).join(', ')} to ${JSON.stringify(position)}`);
 
   const filePaths = files.map(f => f.path);
 
-  await match(target)
-    .with({ type: 'before' }, async (t) => {
-      // Split files into a new commit before target
-      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-before', t.commitId, '--', ...filePaths]);
+  await match(position)
+    .with({ kind: 'before' }, async (p) => {
+      // Split files into a new commit before position
+      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-before', p.commit, '--', ...filePaths]);
     })
-    .with({ type: 'after' }, async (t) => {
-      // Split files into a new commit after target
-      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', t.commitId, '--', ...filePaths]);
+    .with({ kind: 'after' }, async (p) => {
+      // Split files into a new commit after position
+      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', p.commit, '--', ...filePaths]);
     })
-    .with({ type: 'new-commit-between' }, async (t) => {
+    .with({ kind: 'between-commits' }, async (p) => {
       // Split files into a new commit between two commits
       // --insert-after means "after" (descendant of) and --insert-before means "before" (ancestor of)
-      // To place the split between beforeCommitId and afterCommitId:
-      // We want: beforeCommitId → [new split commit] → afterCommitId
-      // So: --insert-after beforeCommitId (new commit is after/descendant of beforeCommitId)
-      //     --insert-before afterCommitId (new commit is before/ancestor of afterCommitId)
+      // To place the split between beforeCommit and afterCommit:
+      // We want: beforeCommit → [new split commit] → afterCommit
+      // So: --insert-after beforeCommit (new commit is after/descendant of beforeCommit)
+      //     --insert-before afterCommit (new commit is before/ancestor of afterCommit)
 
-      // However, if afterCommitId is the same as sourceCommitId, we can't use it as --insert-before
-      // because that would create a loop. In this case, just use --insert-after beforeCommitId
-      if (t.afterCommitId === sourceCommitId) {
-        console.log(`⚠️ afterCommitId same as sourceCommitId, using only --insert-after ${t.beforeCommitId}`);
-        await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', t.beforeCommitId, '--', ...filePaths]);
+      // However, if afterCommit is the same as sourceCommitId, we can't use it as --insert-before
+      // because that would create a loop. In this case, just use --insert-after beforeCommit
+      if (p.afterCommit === sourceCommitId) {
+        console.log(`⚠️ afterCommit same as sourceCommitId, using only --insert-after ${p.beforeCommit}`);
+        await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', p.beforeCommit, '--', ...filePaths]);
       } else {
-        await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', t.beforeCommitId, '--insert-before', t.afterCommitId, '--', ...filePaths]);
+        await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--insert-after', p.beforeCommit, '--insert-before', p.afterCommit, '--', ...filePaths]);
       }
     })
-    .with({ type: 'existing-commit' }, async (t) => {
+    .with({ kind: 'existing-commit' }, async (p) => {
       // Split files into an existing commit (use destination)
-      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '-d', t.commitId, '--', ...filePaths]);
+      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '-d', p.commit, '--', ...filePaths]);
     })
-    .with({ type: 'between' }, async () => {
-      throw new Error('Split with between target is not supported');
-    })
-    .with({ type: 'new-branch' }, async (t) => {
-      // Create new branch and split files there
-      // This is a two-step process: split, then move to new branch
-      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--', ...filePaths]);
-      // TODO: The split creates a new commit, we need to move it to the target branch
-      // The exact semantics need clarification for new-branch target
-      console.log(`⚠️ new-branch split target needs proper implementation. fromCommitId: ${t.fromCommitId}`);
+    .with({ kind: 'new-branch' }, async (p) => {
+      // Split files to new branch from commit
+      await executeJjCommand(repoPath, 'split', ['-r', sourceCommitId, '--destination', p.commit, '--', ...filePaths]);
     })
     .exhaustive();
 }

@@ -32,24 +32,24 @@ function DropZone({ position, children }: DropZoneProps) {
   const createNewChange = useGraphStore(state => state.createNewChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
   const dropLabel = match(position)
-    .with({ kind: 'between' }, between => `after ${shortCommitId(between.afterCommit)} and before ${shortCommitId(between.beforeCommit)}`)
+    .with({ kind: 'between-commits' }, between => `after ${shortCommitId(between.afterCommit)} and before ${shortCommitId(between.beforeCommit)}`)
     .with({ kind: 'before' }, before => `before ${shortCommitId(before.commit)}`)
     .with({ kind: 'after' }, after => `after ${shortCommitId(after.commit)}`)
-    .with({ kind: 'existing' }, existing => `into existing commit ${shortCommitId(existing.commit)}`)
+    .with({ kind: 'existing-commit' }, existing => `into existing commit ${shortCommitId(existing.commit)}`)
     .with({ kind: 'new-branch' }, newBranch => `as new branch from ${shortCommitId(newBranch.commit)}`)
     .exhaustive();
 
   const dropTitle = `Drop to move ${dropLabel}`;
-  const canCreateEmptyChange = position.kind !== 'existing';
+  const canCreateEmptyChange = position.kind !== 'existing-commit';
 
   const dropMetadata: Record<string, string> = {
     'data-drop-kind': position.kind,
   };
 
-  if (position.kind === 'between') {
+  if (position.kind === 'between-commits') {
     dropMetadata['data-before-commit'] = position.beforeCommit;
     dropMetadata['data-after-commit'] = position.afterCommit;
-  } else if (position.kind === 'before' || position.kind === 'after' || position.kind === 'existing') {
+  } else if (position.kind === 'before' || position.kind === 'after' || position.kind === 'existing-commit') {
     dropMetadata['data-commit'] = position.commit;
   }
 
@@ -133,7 +133,7 @@ function DropZone({ position, children }: DropZoneProps) {
     <>
       {position.kind === 'before' && dropZoneLine}
       {children}
-      {(position.kind === 'after' || position.kind === 'between') && dropZoneLine}
+      {(position.kind === 'after' || position.kind === 'between-commits') && dropZoneLine}
     </>
   );
 }
@@ -250,7 +250,7 @@ export function StackComponent({
             <DropZone
               position={
                 nextCommitId
-                  ? { kind: 'between', beforeCommit: commitId, afterCommit: nextCommitId }
+                  ? { kind: 'between-commits', beforeCommit: commitId, afterCommit: nextCommitId }
                   : { kind: 'before', commit: commitId }
               }
             />
