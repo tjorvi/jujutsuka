@@ -26,7 +26,9 @@ import {
   type Position
 } from './repo-parser.ts';
 import { z } from 'zod';
-import type { GitCommand } from '../../frontend/src/commands.ts';
+import { match } from 'ts-pattern';
+
+const fileStatusSchema = z.enum(['M', 'A', 'D', 'R', 'C']);
 
 const positionSchema = z.union([
   z.object({
@@ -55,24 +57,17 @@ const positionSchema = z.union([
 type PositionInput = z.infer<typeof positionSchema>;
 
 function validatePosition(position: PositionInput): Position {
-  switch (position.kind) {
-    case 'before':
-      return { kind: 'before', commit: createCommitId(position.commit) };
-    case 'after':
-      return { kind: 'after', commit: createCommitId(position.commit) };
-    case 'between-commits':
-      return {
-        kind: 'between-commits',
-        beforeCommit: createCommitId(position.beforeCommit),
-        afterCommit: createCommitId(position.afterCommit),
-      };
-    case 'new-branch':
-      return { kind: 'new-branch', commit: createCommitId(position.commit) };
-    case 'existing-commit':
-      return { kind: 'existing-commit', commit: createCommitId(position.commit) };
-    default:
-      throw new Error(`Unsupported position kind: ${(position as { kind: string }).kind}`);
-  }
+  return match(position)
+    .with({ kind: 'before' }, (p) => ({ kind: 'before' as const, commit: createCommitId(p.commit) }))
+    .with({ kind: 'after' }, (p) => ({ kind: 'after' as const, commit: createCommitId(p.commit) }))
+    .with({ kind: 'between-commits' }, (p) => ({
+      kind: 'between-commits' as const,
+      beforeCommit: createCommitId(p.beforeCommit),
+      afterCommit: createCommitId(p.afterCommit),
+    }))
+    .with({ kind: 'new-branch' }, (p) => ({ kind: 'new-branch' as const, commit: createCommitId(p.commit) }))
+    .with({ kind: 'existing-commit' }, (p) => ({ kind: 'existing-commit' as const, commit: createCommitId(p.commit) }))
+    .exhaustive();
 }
 
 // Helper to convert legacy CommandTarget format to Position
@@ -171,7 +166,7 @@ export const appRouter = router({
           type: z.literal('move-file-to-change'),
           file: z.object({
             path: z.string(),
-            status: z.string()
+            status: fileStatusSchema
           }),
           sourceChangeId: z.string(),
           targetChangeId: z.string()
@@ -180,7 +175,7 @@ export const appRouter = router({
           type: z.literal('split-file-from-change'),
           file: z.object({
             path: z.string(),
-            status: z.string()
+            status: fileStatusSchema
           }),
           sourceChangeId: z.string(),
           position: positionSchema,
@@ -216,7 +211,7 @@ export const appRouter = router({
           type: z.literal('create-new-change'),
           files: z.array(z.object({
             path: z.string(),
-            status: z.string()
+            status: fileStatusSchema
           })),
           position: positionSchema
         }),
@@ -295,7 +290,7 @@ export const appRouter = router({
           sourceCommitId: z.string(),
           files: z.array(z.object({
             path: z.string(),
-            status: z.string()
+            status: fileStatusSchema
           })),
           target: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
@@ -317,7 +312,7 @@ export const appRouter = router({
           targetCommitId: z.string(),
           files: z.array(z.object({
             path: z.string(),
-            status: z.string()
+            status: fileStatusSchema
           })),
           sourceChangeStableId: z.string().optional(),
           targetChangeStableId: z.string().optional()
@@ -325,7 +320,7 @@ export const appRouter = router({
       ])
     }))
     .mutation(async ({ input }) => {
-      const command = input.command as GitCommand;
+      const command = input.command;
       
       console.log('🚀 Executing command:', command);
       const repoPath = input.repoPath;
@@ -439,7 +434,9 @@ export const appRouter = router({
           await executeMoveFiles(repoPath, sourceCommitId, targetCommitId, command.files);
 
         } else {
-          throw new Error(`Unknown command type: ${(command as any).type}`);
+          // Exhaustive check: this should never happen if all command types are handled
+          const _exhaustive: never = command;
+          throw new Error(`Unknown command type: ${(_exhaustive as { type: string }).type}`);
         }
         
         console.log('✅ Command executed successfully');

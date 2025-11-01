@@ -404,7 +404,12 @@ export async function getCommitFileChanges(repoPath: string, commitId: CommitId)
         const statusMatch = line.match(/^([MADRC])\s+(.+)$/);
         if (statusMatch) {
           const [, status, path] = statusMatch;
-          statusMap.set(path.trim(), status as FileChange['status']);
+          // Validate status is one of the expected values
+          if (status === 'M' || status === 'A' || status === 'D' || status === 'R' || status === 'C') {
+            statusMap.set(path.trim(), status);
+          } else {
+            console.warn(`Unexpected file status: ${status} for path: ${path}`);
+          }
         }
       }
 
@@ -686,7 +691,9 @@ export async function executeHunkSplit(
     } else if (position.kind === 'existing-commit') {
       throw new Error('existing-commit position not supported for hunk split - use evosquash instead');
     } else {
-      throw new Error(`Unsupported position kind for hunk split: ${(position as any).kind}`);
+      // Exhaustive check: this should never happen if all position kinds are handled
+      const _exhaustive: never = position;
+      throw new Error(`Unsupported position kind for hunk split: ${_exhaustive}`);
     }
 
     await executeJjCommand(repoPath, 'new', newArgs);

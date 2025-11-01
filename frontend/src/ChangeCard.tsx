@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { BookmarkName, ChangeId, Commit, CommitId } from '../../backend/src/repo-parser';
+import type { BookmarkName, Commit, CommitId } from '../../backend/src/repo-parser';
+import { createBookmarkName } from './brandedTypes';
 import {
   draggedFileChange,
   draggedChange,
@@ -17,7 +18,7 @@ interface CommitStats {
   deletions: number;
 }
 
-const syntheticBookmarkNames = new Set<BookmarkName>(['@' as BookmarkName, 'git_head()' as BookmarkName]);
+const syntheticBookmarkNames = new Set<BookmarkName>([createBookmarkName('@'), createBookmarkName('git_head()')]);
 
 function isSyntheticBookmark(bookmarkName: BookmarkName): boolean {
   return syntheticBookmarkNames.has(bookmarkName);
@@ -98,7 +99,7 @@ export function ChangeCard({
   const [isHovered, setIsHovered] = useState(false);
   const [isBeingDragged, setIsBeingDragged] = useState(false);
 
-  const changeId = commit.changeId as ChangeId;
+  const changeId = commit.changeId;
   const sizeIndicator = useMemo(() => getCommitSizeIndicator(stats), [stats]);
   const trimmedDescription = useMemo(() => commit.description.trim(), [commit.description]);
   const summaryDescription = useMemo(() => {
@@ -180,8 +181,9 @@ export function ChangeCard({
     }
     event.preventDefault();
     event.stopPropagation();
-    const nextTarget = event.relatedTarget as Node | null;
-    if (!event.currentTarget.contains(nextTarget)) {
+    const nextTarget = event.relatedTarget;
+    // Check if relatedTarget is a Node before using contains
+    if (!nextTarget || !(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
       setIsHovered(false);
     }
   };
@@ -296,7 +298,7 @@ export function ChangeCard({
           {bookmarks.length > 0 && (
             <div className={styles.bookmarkList}>
               {bookmarks.map((bookmarkName) => {
-                const badgeLabel = bookmarkName as unknown as string;
+                const badgeLabel = String(bookmarkName);
                 const synthetic = isSyntheticBookmark(bookmarkName);
                 return (
                   <span
@@ -376,8 +378,9 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
-    const nextTarget = event.relatedTarget as Node | null;
-    if (!event.currentTarget.contains(nextTarget)) {
+    const nextTarget = event.relatedTarget;
+    // Check if relatedTarget is a Node before using contains
+    if (!nextTarget || !(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
       setIsOver(false);
     }
   };

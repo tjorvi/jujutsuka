@@ -1,10 +1,32 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { match } from 'ts-pattern';
-import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName } from "../../backend/src/repo-parser";
-import type { GitCommand, CommandTarget, IntentionCommand, HunkRange } from './commands';
+import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName, CommandTarget } from "../../backend/src/repo-parser";
+import type { GitCommand, IntentionCommand, HunkRange } from './commands';
 import type { DropPosition } from './dropPosition';
 import { mutations } from './api';
+
+// Helper to convert Position (CommandTarget) to old target format for backend
+type LegacyTargetFormat =
+  | { type: 'before'; commitId: CommitId }
+  | { type: 'after'; commitId: CommitId }
+  | { type: 'between'; beforeCommitId: CommitId; afterCommitId: CommitId }
+  | { type: 'new-branch'; fromCommitId: CommitId }
+  | { type: 'existing-commit'; commitId: CommitId };
+
+function convertPositionToLegacyTarget(position: CommandTarget): LegacyTargetFormat {
+  return match(position)
+    .with({ kind: 'before' }, (p) => ({ type: 'before' as const, commitId: p.commit }))
+    .with({ kind: 'after' }, (p) => ({ type: 'after' as const, commitId: p.commit }))
+    .with({ kind: 'between-commits' }, (p) => ({
+      type: 'between' as const,
+      beforeCommitId: p.beforeCommit,
+      afterCommitId: p.afterCommit,
+    }))
+    .with({ kind: 'new-branch' }, (p) => ({ type: 'new-branch' as const, fromCommitId: p.commit }))
+    .with({ kind: 'existing-commit' }, (p) => ({ type: 'existing-commit' as const, commitId: p.commit }))
+    .exhaustive();
+}
 
 type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
 
@@ -109,6 +131,12 @@ interface OperationContext {
   readonly relatedCommitAssociations: readonly CommitAssociation[];
 }
 
+const EMPTY_OPERATION_CONTEXT: OperationContext = {
+  relatedCommitIds: [],
+  relatedChangeIds: [],
+  relatedCommitAssociations: [],
+};
+
 function deriveOperationContext(
   kind: UiOperationKind,
   commitGraph: CommitGraph | null,
@@ -129,7 +157,7 @@ function deriveOperationContext(
   const registerCommit = (commitId: CommitId | null | undefined, explicitChange?: ChangeId | null) => {
     if (!commitId) return;
     const existing = commitMap.get(commitId);
-    const derivedChange = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
+    const derivedChange = commitGraph?.[commitId]?.commit.changeId;
     const finalChange = explicitChange ?? existing ?? derivedChange;
     commitMap.set(commitId, finalChange);
     commitSet.add(commitId);
@@ -313,7 +341,7 @@ function describeLegacyGitCommand(command: GitCommand): string {
       `Legacy split ${shortId(cmd.sourceCommitId)} via ${summariseCommandTarget(cmd.target)} with ${describeFileCount(cmd.files)}`)
     .with({ type: 'move-files' }, (cmd) =>
       `Legacy move ${describeFileCount(cmd.files)} from ${shortId(cmd.sourceCommitId)} to ${shortId(cmd.targetCommitId)}`)
-    .otherwise((cmd) => describeIntentionCommand(cmd as IntentionCommand));
+    .otherwise(describeIntentionCommand);
 }
 
 interface GraphState {
@@ -385,7 +413,7 @@ export const useGraphStore = create<GraphState>()(
         const currentCommitGraph = get().commitGraph;
         const context = entry
           ? deriveOperationContext(entry.kind, currentCommitGraph, entry.relatedCommitAssociations)
-          : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+          : EMPTY_OPERATION_CONTEXT;
 
         set({ operationLog: opLogAfter });
         get().updateUiOperationStatus(operationId, 'succeeded', {
@@ -523,16 +551,16 @@ export const useGraphStore = create<GraphState>()(
         }
 
         console.log('🔖 setBookmarks: received', bookmarks.length, 'bookmarks');
-        const grouped: Record<string, BookmarkName[]> = Object.create(null);
+        const grouped: Record<CommitId, BookmarkName[]> = Object.create(null);
         for (const bookmark of bookmarks) {
-          const commitId = bookmark.commitId as string;
+          const commitId = bookmark.commitId;
           const existing = grouped[commitId] ?? [];
           grouped[commitId] = [...existing, bookmark.name];
         }
 
         const sortedEntries = Object.entries(grouped).map(([commitId, names]) => {
           console.log('🔖 setBookmarks: commit', commitId, 'bookmarks', names);
-          const sorted = [...names].sort((a, b) => (a as string).localeCompare(b as string)) as BookmarkName[];
+          const sorted = [...names].sort((a, b) => a.localeCompare(b));
           return [commitId, sorted] as const;
         });
 
@@ -555,7 +583,7 @@ export const useGraphStore = create<GraphState>()(
         set({ isExecutingCommand: true });
 
         try {
-          const response = await mutations.executeCommand.mutate({ repoPath, command }) as CommandExecutionResult;
+          const response = await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Intention command executed successfully');
           applyCommandOutcome(response, operationId);
         } catch (error) {
@@ -564,7 +592,7 @@ export const useGraphStore = create<GraphState>()(
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
             ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
-            : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+            : EMPTY_OPERATION_CONTEXT;
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
             relatedCommitIds: failureContext.relatedCommitIds,
@@ -580,8 +608,8 @@ export const useGraphStore = create<GraphState>()(
       // Intention-based UI actions
       moveFileToChange: async (file, sourceChangeId, targetChangeId) => {
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
-        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId;
+        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'move-file-to-change',
           file,
@@ -595,7 +623,7 @@ export const useGraphStore = create<GraphState>()(
 
       splitFileFromChange: async (file, sourceChangeId, position) => {
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'split-file-from-change',
           file,
@@ -608,7 +636,7 @@ export const useGraphStore = create<GraphState>()(
 
       rebaseChange: async (changeId, position) => {
         const commitGraph = get().commitGraph;
-        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
+        const stableId = commitGraph?.[changeId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'rebase-change',
           changeId,
@@ -620,7 +648,7 @@ export const useGraphStore = create<GraphState>()(
 
       reorderChange: async (changeId, position) => {
         const commitGraph = get().commitGraph;
-        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
+        const stableId = commitGraph?.[changeId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'reorder-change',
           changeId,
@@ -632,8 +660,8 @@ export const useGraphStore = create<GraphState>()(
 
       squashChangeInto: async (sourceChangeId, targetChangeId) => {
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
-        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId;
+        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'squash-change-into',
           sourceChangeId,
@@ -646,8 +674,8 @@ export const useGraphStore = create<GraphState>()(
 
       splitAtEvoLog: async (changeId, entryCommitId) => {
         const commitGraph = get().commitGraph;
-        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
-        const entryStable = commitGraph?.[entryCommitId]?.commit.changeId as ChangeId | undefined;
+        const stableId = commitGraph?.[changeId]?.commit.changeId;
+        const entryStable = commitGraph?.[entryCommitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'split-at-evolog',
           changeId,
@@ -669,7 +697,7 @@ export const useGraphStore = create<GraphState>()(
 
       updateChangeDescription: async (commitId, description) => {
         const commitGraph = get().commitGraph;
-        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'update-change-description',
           commitId,
@@ -681,7 +709,7 @@ export const useGraphStore = create<GraphState>()(
 
       abandonChange: async (commitId) => {
         const commitGraph = get().commitGraph;
-        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'abandon-change',
           commitId,
@@ -692,7 +720,7 @@ export const useGraphStore = create<GraphState>()(
 
       checkoutChange: async (commitId) => {
         const commitGraph = get().commitGraph;
-        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'checkout-change',
           commitId,
@@ -703,7 +731,7 @@ export const useGraphStore = create<GraphState>()(
 
       moveBookmark: async (bookmarkName, targetCommitId) => {
         const commitGraph = get().commitGraph;
-        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'move-bookmark',
           bookmarkName,
@@ -723,7 +751,7 @@ export const useGraphStore = create<GraphState>()(
 
       addBookmark: async (bookmarkName, targetCommitId) => {
         const commitGraph = get().commitGraph;
-        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'add-bookmark',
           bookmarkName,
@@ -735,7 +763,7 @@ export const useGraphStore = create<GraphState>()(
 
       executeHunkSplit: async (sourceCommitId, hunkRanges, position, description) => {
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId;
         const command: IntentionCommand = {
           type: 'hunk-split',
           sourceCommitId,
@@ -754,19 +782,20 @@ export const useGraphStore = create<GraphState>()(
           return;
         }
         const commitGraph = get().commitGraph;
-        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId;
 
-        const command: GitCommand = { type: 'rebase', commitId, target, changeStableId };
+        const legacyTarget = convertPositionToLegacyTarget(target);
+        const command = { type: 'rebase' as const, commitId, target: legacyTarget, changeStableId };
         console.log('🔄 REBASE COMMAND:', command);
         const operationId = get().logUiOperation({
-          description: describeLegacyGitCommand(command),
-          kind: { type: 'legacy-command', command },
+          description: describeLegacyGitCommand({ type: 'rebase', commitId, target, changeStableId }),
+          kind: { type: 'legacy-command', command: { type: 'rebase', commitId, target, changeStableId } },
         });
 
         set({ isExecutingCommand: true });
 
         try {
-          const response = await mutations.executeCommand.mutate({ repoPath, command }) as CommandExecutionResult;
+          const response = await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Rebase command executed successfully');
           applyCommandOutcome(response, operationId);
         } catch (error) {
@@ -775,7 +804,7 @@ export const useGraphStore = create<GraphState>()(
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
             ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
-            : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+            : EMPTY_OPERATION_CONTEXT;
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
             relatedCommitIds: failureContext.relatedCommitIds,
@@ -795,8 +824,8 @@ export const useGraphStore = create<GraphState>()(
           return;
         }
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
-        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId;
 
         const command: GitCommand = { type: 'squash', sourceCommitId, targetCommitId, sourceChangeStableId: sourceStable, targetChangeStableId: targetStable };
         console.log('🔧 SQUASH COMMAND:', command);
@@ -808,7 +837,7 @@ export const useGraphStore = create<GraphState>()(
         set({ isExecutingCommand: true });
 
         try {
-          const response = await mutations.executeCommand.mutate({ repoPath, command }) as CommandExecutionResult;
+          const response = await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Squash command executed successfully');
           applyCommandOutcome(response, operationId);
         } catch (error) {
@@ -817,7 +846,7 @@ export const useGraphStore = create<GraphState>()(
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
             ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
-            : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+            : EMPTY_OPERATION_CONTEXT;
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
             relatedCommitIds: failureContext.relatedCommitIds,
@@ -837,19 +866,20 @@ export const useGraphStore = create<GraphState>()(
           return;
         }
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId;
 
-        const command: GitCommand = { type: 'split', sourceCommitId, files, target, sourceChangeStableId: sourceStable };
+        const legacyTarget = convertPositionToLegacyTarget(target);
+        const command = { type: 'split' as const, sourceCommitId, files, target: legacyTarget, sourceChangeStableId: sourceStable };
         console.log('✂️ SPLIT COMMAND:', command);
         const operationId = get().logUiOperation({
-          description: describeLegacyGitCommand(command),
-          kind: { type: 'legacy-command', command },
+          description: describeLegacyGitCommand({ type: 'split', sourceCommitId, files, target, sourceChangeStableId: sourceStable }),
+          kind: { type: 'legacy-command', command: { type: 'split', sourceCommitId, files, target, sourceChangeStableId: sourceStable } },
         });
 
         set({ isExecutingCommand: true });
 
         try {
-          const response = await mutations.executeCommand.mutate({ repoPath, command }) as CommandExecutionResult;
+          const response = await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Split command executed successfully');
           applyCommandOutcome(response, operationId);
         } catch (error) {
@@ -858,7 +888,7 @@ export const useGraphStore = create<GraphState>()(
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
             ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
-            : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+            : EMPTY_OPERATION_CONTEXT;
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
             relatedCommitIds: failureContext.relatedCommitIds,
@@ -878,8 +908,8 @@ export const useGraphStore = create<GraphState>()(
           return;
         }
         const commitGraph = get().commitGraph;
-        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
-        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId;
 
         const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files, sourceChangeStableId: sourceStable, targetChangeStableId: targetStable };
         console.log('📁 MOVE FILES COMMAND:', command);
@@ -891,7 +921,7 @@ export const useGraphStore = create<GraphState>()(
         set({ isExecutingCommand: true });
 
         try {
-          const response = await mutations.executeCommand.mutate({ repoPath, command }) as CommandExecutionResult;
+          const response = await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Move files command executed successfully');
           applyCommandOutcome(response, operationId);
         } catch (error) {
@@ -900,7 +930,7 @@ export const useGraphStore = create<GraphState>()(
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
             ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
-            : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
+            : EMPTY_OPERATION_CONTEXT;
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
             relatedCommitIds: failureContext.relatedCommitIds,

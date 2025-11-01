@@ -1,4 +1,5 @@
-import { createChangeId, createCommitId, createDescription, createEmail, type Commit } from "../../backend/src/repo-parser";
+import type { Commit } from "../../backend/src/repo-parser";
+import { createChangeId, createCommitId, createDescription, createEmail } from "./brandedTypes";
 import { buildCommitGraph } from "./stackUtils";
 import { describe, it, expect } from 'vitest';
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { match } from 'ts-pattern';
 import type { ChangeId, CommitId, Commit, BookmarkName } from '../../backend/src/repo-parser';
 import type { LayoutStackGraph, ParallelGroup, StackId } from './stackUtils';
 import { draggedChange, draggedFileChange, draggedBookmark, draggedHunk, getActiveDragMeta, clearActiveDragMeta } from './useDragDrop';
@@ -106,7 +107,7 @@ function applyRootDragAttributes(element: HTMLDivElement, meta: DragMeta) {
       delete element.dataset.dragBookmarkName;
       break;
     case 'bookmark':
-      element.dataset.dragBookmarkName = meta.bookmarkName as string;
+      element.dataset.dragBookmarkName = String(meta.bookmarkName);
       delete element.dataset.dragCommitId;
       delete element.dataset.dragChangeId;
       delete element.dataset.dragFromCommitId;
@@ -425,16 +426,11 @@ interface ConnectionComponentProps {
 }
 
 function getConnectionColor(type: 'linear' | 'merge' | 'branch'): string {
-  switch (type) {
-    case 'merge':
-      return '#ef4444';
-    case 'branch':
-      return '#f59e0b';
-    case 'linear':
-      return '#3b82f6';
-    default:
-      return '#6b7280';
-  }
+  return match(type)
+    .with('merge', () => '#ef4444')
+    .with('branch', () => '#f59e0b')
+    .with('linear', () => '#3b82f6')
+    .exhaustive();
 }
 
 function ConnectionComponent({ connection }: ConnectionComponentProps) {
@@ -656,8 +652,9 @@ export function StackGraphComponent({
   };
 
   const handleRootDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    const nextTarget = event.relatedTarget as Node | null;
-    if (nextTarget && event.currentTarget.contains(nextTarget)) {
+    const nextTarget = event.relatedTarget;
+    // Check if relatedTarget is a Node before using contains
+    if (nextTarget && nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
       return;
     }
     logRootDragState('dragleave', inactiveRootDragState, []);

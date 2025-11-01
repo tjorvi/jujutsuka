@@ -1,6 +1,7 @@
 import type { OpLogEntry } from "../../backend/src/repo-parser";
 import type { UiOperationLogEntry } from "./graphStore";
 import type { ReactNode } from 'react';
+import { match } from 'ts-pattern';
 
 interface LatestUiOperationPanelProps {
   readonly latestUiOperation: UiOperationLogEntry;
@@ -18,21 +19,12 @@ const statusStyles: Record<UiOperationLogEntry['status'], { readonly border: str
   failed: { border: '#ef4444', background: '#fee2e2', label: 'Failure', text: '#991b1b' },
 };
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled UI operation kind: ${JSON.stringify(value)}`);
-}
-
 function describeKind(kind: UiOperationLogEntry['kind']): string {
-  switch (kind.type) {
-    case 'intention-command':
-      return `Command: ${kind.command.type}`;
-    case 'legacy-command':
-      return `Legacy command: ${kind.command.type}`;
-    case 'button':
-      return `Button: ${kind.button}`;
-    default:
-      return assertNever(kind);
-  }
+  return match(kind)
+    .with({ type: 'intention-command' }, (k) => `Command: ${k.command.type}`)
+    .with({ type: 'legacy-command' }, (k) => `Legacy command: ${k.command.type}`)
+    .with({ type: 'button' }, (k) => `Button: ${k.button}`)
+    .exhaustive();
 }
 
 export function LatestUiOperationPanel({

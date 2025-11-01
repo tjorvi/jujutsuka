@@ -10,12 +10,12 @@ import type { Bookmark, ChangeId, Commit, CommitId } from '../../backend/src/rep
  */
 export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: Commit; children: CommitId[] }> {
   const graph: Record<CommitId, { commit: Commit; children: CommitId[] }> = {};
-  
+
   // Initialize all commits in the graph
   for (const commit of commits) {
     graph[commit.id] = { commit, children: [] };
   }
-  
+
   // Build parent-child relationships
   for (const commit of commits) {
     for (const parentId of commit.parents) {
@@ -25,7 +25,7 @@ export function buildCommitGraph(commits: Commit[]): Record<CommitId, { commit: 
       }
     }
   }
-  
+
   return graph;
 }
 
@@ -44,43 +44,6 @@ function findDivergentChangeIds(commits: Commit[]): ReadonlySet<ChangeId> {
   }
 
   return divergent;
-}
-
-// Branded string type for stack IDs
-declare const StackIdBrand: unique symbol;
-export type StackId = string & { readonly [StackIdBrand]: true };
-
-export function createStackId(value: string): StackId {
-  return value as StackId;
-}
-
-/**
- * Represents a linear sequence of commits (no branching/merging within the stack)
- */
-export interface Stack {
-  id: StackId;
-  commits: CommitId[];  // Ordered from oldest (bottom) to newest (top)
-  parentStacks: StackId[];  // Stacks that this stack depends on
-  childStacks: StackId[];   // Stacks that depend on this stack
-}
-
-/**
- * Information about connections between stacks
- */
-export interface StackConnection {
-  from: StackId;
-  to: StackId;
-  type: 'linear' | 'merge' | 'branch';
-}
-
-/**
- * Result of stack preprocessing
- */
-export interface StackGraph {
-  stacks: Record<StackId, Stack>;
-  connections: StackConnection[];
-  rootStacks: StackId[];  // Stacks with no parents
-  leafStacks: StackId[];  // Stacks with no children
 }
 
 /**

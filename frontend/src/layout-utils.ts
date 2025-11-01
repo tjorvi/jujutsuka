@@ -2,6 +2,7 @@
 // This is a pure UI concern - no data mutation
 
 import type { StackGraph, StackId } from "./stackUtils";
+import { TypedObject } from "./typed-object";
 
 
 /**
@@ -28,10 +29,10 @@ export function detectParallelGroups(stackGraph: StackGraph): ParallelGroup[] {
 
   // Group stacks by their parent-child signature
   const stacksBySignature = new Map<string, StackId[]>();
-  
-  for (const stackId of Object.keys(stacks) as StackId[]) {
+
+  for (const stackId of TypedObject.keys(stacks)) {
     const stack = stacks[stackId];
-    
+
     // Create a signature based on parent and child stacks
     const parentSignature = [...stack.parentStacks].sort().join(',');
     const childSignature = [...stack.childStacks].sort().join(',');
@@ -49,8 +50,8 @@ export function detectParallelGroups(stackGraph: StackGraph): ParallelGroup[] {
     
     // Parse the signature
     const [parentSig, childSig] = signature.split('|');
-    const parentStacks = parentSig ? parentSig.split(',') as StackId[] : [];
-    const childStacks = childSig ? childSig.split(',') as StackId[] : [];
+    const parentStacks: StackId[] = parentSig ? parentSig.split(',').filter(s => s.length > 0) as StackId[] : [];
+    const childStacks: StackId[] = childSig ? childSig.split(',').filter(s => s.length > 0) as StackId[] : [];
     
     // Check if this is a complete diamond (all merge to same children)
     let isComplete = false;

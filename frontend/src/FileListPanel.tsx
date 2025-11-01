@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent, type FormEvent } from 'react';
 import { queries, useQuery, trpc } from './api';
-import type { CommitId, BookmarkName } from "../../backend/src/repo-parser";
+import type { CommitId } from "../../backend/src/repo-parser";
+import { createBookmarkName } from "./brandedTypes";
 import { llmService } from './llmService';
 import { useGraphStore } from './graphStore';
 import { draggedFileChange } from './useDragDrop';
@@ -190,20 +191,22 @@ export function FileListPanel({
     const rawName = newBookmarkName;
 
     try {
-      const validatedName = bookmarkNameSchema.parse(rawName) as string;
-      if (syntheticBookmarkNames.has(validatedName)) {
+      const validatedString = bookmarkNameSchema.parse(rawName);
+      const validatedName = createBookmarkName(validatedString);
+
+      if (syntheticBookmarkNames.has(validatedString)) {
         setBookmarkError('This bookmark name is reserved.');
         return;
       }
 
-      const alreadyExists = selectedCommitBookmarks.some(bookmark => (bookmark as unknown as string) === validatedName);
+      const alreadyExists = selectedCommitBookmarks.some(bookmark => String(bookmark) === validatedString);
       if (alreadyExists) {
         setBookmarkError('Bookmark already exists on this change.');
         return;
       }
 
       setBookmarkError(null);
-      await addBookmark(validatedName as BookmarkName, selectedCommitId);
+      await addBookmark(validatedName, selectedCommitId);
       setNewBookmarkName('');
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -583,7 +586,7 @@ export function FileListPanel({
         {selectedCommitBookmarks.length > 0 ? (
           <div className={styles.bookmarkList}>
             {selectedCommitBookmarks.map((bookmark) => {
-              const label = bookmark as unknown as string;
+              const label = String(bookmark);
               const isSyntheticBookmark = syntheticBookmarkNames.has(label);
               return (
                 <span key={label} className={styles.bookmarkBadge}>

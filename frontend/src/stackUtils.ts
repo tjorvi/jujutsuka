@@ -1,5 +1,6 @@
 // Pure stack building logic - moved from backend to avoid Node.js dependencies
 import type { CommitId, Commit } from "../../backend/src/repo-parser";
+import { TypedObject } from "./typed-object";
 
 // Branded string type for stack IDs
 declare const StackIdBrand: unique symbol;
@@ -161,7 +162,7 @@ export function buildStackGraph(commits: Commit[]): StackGraph {
   }
 
   // Process all commits starting from roots
-  const allCommitIds = Object.keys(graph) as CommitId[];
+  const allCommitIds = TypedObject.keys(graph);
 
   // Process all commits starting from newest to oldest (matching JJ log order)
   for (let index = allCommitIds.length - 1; index >= 0; index--) {
@@ -250,10 +251,10 @@ export function detectParallelGroups(stackGraph: StackGraph): ParallelGroup[] {
 
   // Group stacks by their parent-child signature
   const stacksBySignature = new Map<string, StackId[]>();
-  
-  for (const stackId of Object.keys(stacks) as StackId[]) {
+
+  for (const stackId of TypedObject.keys(stacks)) {
     const stack = stacks[stackId];
-    
+
     // Create a signature based on parent and child stacks
     const parentSignature = [...stack.parentStacks].sort().join(',');
     const childSignature = [...stack.childStacks].sort().join(',');
@@ -271,8 +272,8 @@ export function detectParallelGroups(stackGraph: StackGraph): ParallelGroup[] {
     
     // Parse the signature
     const [parentSig, childSig] = signature.split('|');
-    const parentStacks = parentSig ? parentSig.split(',') as StackId[] : [];
-    const childStacks = childSig ? childSig.split(',') as StackId[] : [];
+    const parentStacks: StackId[] = parentSig ? parentSig.split(',').filter(s => s.length > 0) as StackId[] : [];
+    const childStacks: StackId[] = childSig ? childSig.split(',').filter(s => s.length > 0) as StackId[] : [];
     
     // Check if this is a complete diamond (all merge to same children)
     let isComplete = false;

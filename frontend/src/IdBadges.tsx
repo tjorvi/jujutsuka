@@ -140,7 +140,7 @@ interface CommitChangeTokenProps {
 
 export function CommitChangeToken({ commitId, changeId: changeIdProp }: CommitChangeTokenProps) {
   const commitGraph = useGraphStore(state => state.commitGraph);
-  const resolvedChangeId = changeIdProp ?? (commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined);
+  const resolvedChangeId = changeIdProp ?? commitGraph?.[commitId]?.commit.changeId;
   const changeIdsArray = resolvedChangeId ? [resolvedChangeId] : [];
   const { onEnter, onLeave } = useHoverHandlers([commitId], changeIdsArray);
 

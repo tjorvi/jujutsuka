@@ -87,8 +87,9 @@ function DropZone({ position, children }: DropZoneProps) {
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
-    const nextTarget = event.relatedTarget as Node | null;
-    if (!event.currentTarget.contains(nextTarget)) {
+    const nextTarget = event.relatedTarget;
+    // Check if relatedTarget is a Node before using contains
+    if (!nextTarget || !(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
       setIsOver(false);
     }
   };
