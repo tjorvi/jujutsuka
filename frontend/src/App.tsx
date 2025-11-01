@@ -4,10 +4,12 @@ import { FileListPanel } from './FileListPanel';
 import { DiffPanel } from './DiffPanel';
 import { Settings } from './Settings';
 import { DragDropProvider } from './DragDropContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { LatestUiOperationPanel } from './LatestUiOperationPanel';
 import type { CommitId, OpLogEntry } from "../../backend/src/repo-parser";
 import { useGraphData } from './useGraphData';
 import { useGraphStore } from './graphStore';
+import type { UiOperationLogEntry } from './graphStore';
 import { useDragState } from './useDragState';
 import { trpc } from './api';
 
@@ -35,11 +37,16 @@ function App() {
   const [evologPreviewCommitId, setEvologPreviewCommitId] = useState<CommitId | undefined>();
   const [showSettings, setShowSettings] = useState(false);
   const [showOpLog, setShowOpLog] = useState(false);
-  const [expandedSnapshots, setExpandedSnapshots] = useState<Set<number>>(new Set());
+  const [expandedSnapshots, setExpandedSnapshots] = useState<Set<string>>(new Set());
   const [highlightedOps, setHighlightedOps] = useState<Set<string>>(new Set());
+  const [includeUiInOpLog, setIncludeUiInOpLog] = useState(true);
+  const [isUiPanelExpanded, setIsUiPanelExpanded] = useState(false);
   const currentCommitId = useGraphStore(state => state.currentCommitId);
   const operationLog = useGraphStore(state => state.operationLog);
   const divergentChangeIds = useGraphStore(state => state.divergentChangeIds);
+  const logUiOperation = useGraphStore(state => state.logUiOperation);
+  const updateUiOperationStatus = useGraphStore(state => state.updateUiOperationStatus);
+  const uiOperationLog = useGraphStore(state => state.uiOperationLog);
 
   // Save directory to localStorage and sync to store whenever it changes
   useEffect(() => {
@@ -69,20 +76,42 @@ function App() {
 
   // Handlers for undo/redo
   const handleUndo = async () => {
-    if (!repoDirectory) return;
+    const operationId = logUiOperation({
+      description: 'Undo last operation via UI',
+      kind: { type: 'button', button: 'undo' },
+    });
+    if (!repoDirectory) {
+      updateUiOperationStatus(operationId, 'failed', 'Repository path is not set');
+      return;
+    }
     try {
       await trpc.undo.mutate({ repoPath: repoDirectory });
+      updateUiOperationStatus(operationId, 'succeeded');
     } catch (error) {
       console.error('Undo failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      updateUiOperationStatus(operationId, 'failed', message);
+      throw error;
     }
   };
 
   const handleRedo = async () => {
-    if (!repoDirectory) return;
+    const operationId = logUiOperation({
+      description: 'Redo last operation via UI',
+      kind: { type: 'button', button: 'redo' },
+    });
+    if (!repoDirectory) {
+      updateUiOperationStatus(operationId, 'failed', 'Repository path is not set');
+      return;
+    }
     try {
       await trpc.redo.mutate({ repoPath: repoDirectory });
+      updateUiOperationStatus(operationId, 'succeeded');
     } catch (error) {
       console.error('Redo failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      updateUiOperationStatus(operationId, 'failed', message);
+      throw error;
     }
   };
 
@@ -108,6 +137,390 @@ function App() {
   const shortenOpDescription = (description: string): string => {
     // Replace long hex strings (64+ chars) with shortened versions (12 chars)
     return description.replace(/([a-f0-9]{64,})/g, (match) => match.substring(0, 12) + '...');
+  };
+
+  const parseOpTimestamp = (timestamp: string): number => {
+    const isoLike = timestamp.replace(' ', 'T');
+    const parsed = Date.parse(isoLike);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+    const parsedWithZ = Date.parse(`${isoLike}Z`);
+    if (!Number.isNaN(parsedWithZ)) {
+      return parsedWithZ;
+    }
+    return Date.now();
+  };
+
+  type OperationTimelineEntry =
+    | { kind: 'operation'; entry: OpLogEntry; timestampMs: number; key: string }
+    | { kind: 'snapshot-group'; entries: OpLogEntry[]; timestampMs: number; key: string };
+
+  type TimelineEntry =
+    | (OperationTimelineEntry & { sequence: number })
+    | { kind: 'ui'; entry: UiOperationLogEntry; timestampMs: number; key: string; sequence: number };
+
+  const operationTimeline: OperationTimelineEntry[] = useMemo(() => {
+    if (!operationLog) {
+      return [];
+    }
+
+    const timeline: OperationTimelineEntry[] = [];
+    let snapshotBuffer: OpLogEntry[] = [];
+    let snapshotGroupCount = 0;
+
+    for (const entry of operationLog) {
+      const isSnapshot = entry.operationDescription === 'snapshot working copy';
+      if (isSnapshot) {
+        snapshotBuffer.push(entry);
+        continue;
+      }
+
+      if (snapshotBuffer.length > 0) {
+        const groupKey = `snapshots-${snapshotGroupCount}`;
+        timeline.push({
+          kind: 'snapshot-group',
+          entries: snapshotBuffer,
+          timestampMs: parseOpTimestamp(snapshotBuffer[0].timestamp),
+          key: groupKey,
+        });
+        snapshotGroupCount += 1;
+        snapshotBuffer = [];
+      }
+
+      timeline.push({
+        kind: 'operation',
+        entry,
+        timestampMs: parseOpTimestamp(entry.timestamp),
+        key: entry.fullOperationId,
+      });
+    }
+
+    if (snapshotBuffer.length > 0) {
+      const groupKey = `snapshots-${snapshotGroupCount}`;
+      timeline.push({
+        kind: 'snapshot-group',
+        entries: snapshotBuffer,
+        timestampMs: parseOpTimestamp(snapshotBuffer[0].timestamp),
+        key: groupKey,
+      });
+    }
+
+    return timeline;
+  }, [operationLog]);
+
+  const timelineEntries: TimelineEntry[] = useMemo(() => {
+    const base = operationTimeline.map((entry, index) => ({
+      ...entry,
+      sequence: index,
+    }));
+
+    if (!includeUiInOpLog) {
+      return base;
+    }
+
+    const uiEntries = uiOperationLog.map((entry, index) => {
+      const parsed = Date.parse(entry.timestamp);
+      const timestampMs = Number.isNaN(parsed) ? Date.now() : parsed;
+      return {
+        kind: 'ui' as const,
+        entry,
+        timestampMs,
+        key: entry.id,
+        sequence: base.length + index,
+      };
+    });
+
+    const combined = [...base, ...uiEntries];
+    combined.sort((a, b) => {
+      if (a.timestampMs !== b.timestampMs) {
+        return b.timestampMs - a.timestampMs;
+      }
+      return a.sequence - b.sequence;
+    });
+
+    return combined;
+  }, [operationTimeline, includeUiInOpLog, uiOperationLog]);
+
+  const latestUiOperation = uiOperationLog.length > 0 ? uiOperationLog[uiOperationLog.length - 1] : undefined;
+
+  const operationsAfterLatestUi: readonly OpLogEntry[] = useMemo(() => {
+    if (!latestUiOperation || !operationLog) {
+      return [];
+    }
+    const pivot = latestUiOperation.opLogHeadAtCreation;
+    if (!pivot) {
+      return operationLog;
+    }
+
+    const entries: OpLogEntry[] = [];
+    for (const entry of operationLog) {
+      if (entry.fullOperationId === pivot) {
+        break;
+      }
+      entries.push(entry);
+    }
+    return entries;
+  }, [latestUiOperation, operationLog]);
+
+  const opMap = useMemo(() => {
+    const map = new Map<string, OpLogEntry>();
+    if (operationLog) {
+      for (const entry of operationLog) {
+        map.set(entry.fullOperationId, entry);
+      }
+    }
+    return map;
+  }, [operationLog]);
+
+  const extractTargetOperationId = (description: string): string | null => {
+    const match = description.match(/restore to operation ([a-f0-9]+)/);
+    return match ? match[1] : null;
+  };
+
+  const followChain = (startOpId: string): Set<string> => {
+    const chain = new Set<string>();
+    let currentId: string | null = startOpId;
+    const visited = new Set<string>();
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      chain.add(currentId);
+      const op = opMap.get(currentId);
+      if (!op) {
+        break;
+      }
+
+      const isUndoOrRedo = op.operationDescription.startsWith('undo:') ||
+        op.operationDescription.startsWith('redo:');
+      if (!isUndoOrRedo) {
+        break;
+      }
+      currentId = extractTargetOperationId(op.operationDescription);
+    }
+
+    return chain;
+  };
+
+  const assertNeverKind = (value: never): never => {
+    throw new Error(`Unhandled UI operation kind: ${JSON.stringify(value)}`);
+  };
+
+  const renderOperationCard = (entry: OpLogEntry) => {
+    const isUndo = entry.operationDescription.startsWith('undo:');
+    const isRedo = entry.operationDescription.startsWith('redo:');
+    const isSnapshot = entry.operationDescription === 'snapshot working copy';
+    const isHighlighted = highlightedOps.has(entry.fullOperationId);
+
+    const getOpStyle = () => {
+      if (isUndo) return { bg: '#fef3c7', border: '#fbbf24', icon: '↶' };
+      if (isRedo) return { bg: '#dbeafe', border: '#3b82f6', icon: '↷' };
+      if (isSnapshot) return { bg: '#f3f4f6', border: '#d1d5db', icon: '📸' };
+      return { bg: '#ffffff', border: '#e5e7eb', icon: '⚙️' };
+    };
+
+    const style = getOpStyle();
+    const targetOpId = (isUndo || isRedo) ? extractTargetOperationId(entry.operationDescription) : null;
+
+    return (
+      <div
+        key={entry.operationId}
+        onMouseEnter={() => {
+          if (targetOpId) {
+            const chain = followChain(targetOpId);
+            setHighlightedOps(chain);
+          }
+        }}
+        onMouseLeave={() => {
+          if (targetOpId) {
+            setHighlightedOps(new Set());
+          }
+        }}
+        style={{
+          padding: '12px 16px',
+          background: isHighlighted ? '#fde047' : style.bg,
+          border: isHighlighted ? '2px solid #eab308' : `1px solid ${style.border}`,
+          borderRadius: '6px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          opacity: isSnapshot ? 0.6 : 1,
+          cursor: (isUndo || isRedo) ? 'pointer' : 'default',
+          boxShadow: isHighlighted ? '0 0 0 3px rgba(234, 179, 8, 0.3)' : 'none',
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>{style.icon}</span>
+            <span style={{
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              color: '#6b7280',
+              fontWeight: '500',
+            }}>
+              {entry.operationId}
+            </span>
+          </div>
+          <span
+            title={entry.timestamp}
+            style={{
+              fontSize: '12px',
+              color: '#9ca3af',
+              cursor: 'help',
+            }}
+          >
+            {humanizeTime(entry.timestamp)}
+          </span>
+        </div>
+        <div
+          title={entry.operationDescription}
+          style={{
+            fontSize: '14px',
+            color: '#1f2937',
+            fontWeight: isSnapshot ? '400' : '500',
+          }}
+        >
+          {shortenOpDescription(entry.operationDescription)}
+        </div>
+        <div style={{
+          fontSize: '12px',
+          color: '#6b7280',
+        }}>
+          User: {entry.user}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSnapshotGroupCard = (groupKey: string, entries: readonly OpLogEntry[]) => {
+    const singleEntry = entries[0];
+    if (!singleEntry) {
+      return null;
+    }
+    if (entries.length === 1) {
+      return renderOperationCard(singleEntry);
+    }
+
+    const isExpanded = expandedSnapshots.has(groupKey);
+
+    return (
+      <div key={groupKey}>
+        <div
+          onClick={() => {
+            const next = new Set(expandedSnapshots);
+            if (isExpanded) {
+              next.delete(groupKey);
+            } else {
+              next.add(groupKey);
+            }
+            setExpandedSnapshots(next);
+          }}
+          style={{
+            padding: '12px 16px',
+            background: '#f3f4f6',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            opacity: 0.6,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>{isExpanded ? '▼' : '▶'}</span>
+          <span style={{ fontSize: '14px' }}>📸</span>
+          <span style={{ fontSize: '14px', color: '#6b7280' }}>
+            {entries.length} snapshots
+          </span>
+        </div>
+        {isExpanded && (
+          <div style={{ marginLeft: '24px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {entries.map((entry) => renderOperationCard(entry))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderUiOperationCard = (entry: UiOperationLogEntry) => {
+    const statusStyle = (() => {
+      switch (entry.status) {
+        case 'succeeded':
+          return { bg: '#dcfce7', border: '#22c55e', label: 'Success' };
+        case 'failed':
+          return { bg: '#fee2e2', border: '#ef4444', label: 'Failure' };
+        default:
+          return { bg: '#f3f4f6', border: '#d1d5db', label: 'Triggered' };
+      }
+    })();
+
+    const contextLabel = (() => {
+      switch (entry.kind.type) {
+        case 'intention-command':
+          return `Command: ${entry.kind.command.type}`;
+        case 'legacy-command':
+          return `Legacy command: ${entry.kind.command.type}`;
+        case 'button':
+          return `Button: ${entry.kind.button}`;
+        default:
+          return assertNeverKind(entry.kind);
+      }
+    })();
+
+    return (
+      <div
+        key={entry.id}
+        style={{
+          padding: '12px 16px',
+          background: statusStyle.bg,
+          border: `1px solid ${statusStyle.border}`,
+          borderRadius: '6px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+        }}>
+          <span style={{
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: '#374151',
+            fontWeight: 500,
+          }}>
+            {entry.id}
+          </span>
+          <span style={{ fontSize: '12px', color: '#6b7280' }}>
+            {humanizeTime(entry.timestamp)}
+          </span>
+        </div>
+        <div style={{ fontSize: '14px', color: '#111827', fontWeight: 500 }}>
+          {entry.description}
+        </div>
+        <div style={{ fontSize: '12px', color: '#4b5563' }}>
+          {contextLabel} · Status: {statusStyle.label}
+        </div>
+        {entry.errorMessage && (
+          <div style={{ fontSize: '12px', color: '#b91c1c' }}>
+            Error: {entry.errorMessage}
+          </div>
+        )}
+        {entry.opLogHeadAtCreation && (
+          <div style={{ fontSize: '11px', color: '#6b7280' }}>
+            Op head recorded as {entry.opLogHeadAtCreation.slice(0, 12)}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -235,6 +648,17 @@ function App() {
         </button>
       </div>
 
+      {latestUiOperation && (
+        <LatestUiOperationPanel
+          latestUiOperation={latestUiOperation}
+          operationsAfter={operationsAfterLatestUi}
+          humanizeTime={humanizeTime}
+          shortenOpDescription={shortenOpDescription}
+          isExpanded={isUiPanelExpanded}
+          onToggle={() => setIsUiPanelExpanded(prev => !prev)}
+        />
+      )}
+
       {/* Content - horizontal layout */}
       <div style={{ display: 'flex', height: 'calc(100vh - 80px)' }}>
         {/* Main content area */}
@@ -242,218 +666,41 @@ function App() {
           {showOpLog ? (
             /* Operation Log View */
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-              <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#e5e7eb' }}>
-                📋 Operation Log
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
+                <h2 style={{ fontSize: '20px', color: '#e5e7eb', margin: 0 }}>
+                  📋 Operation Log
+                </h2>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#d1d5db' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeUiInOpLog}
+                    onChange={(event) => setIncludeUiInOpLog(event.target.checked)}
+                  />
+                  Show UI events
+                </label>
+              </div>
 
               {!operationLog && (
                 <p style={{ color: '#9ca3af' }}>Loading operation log...</p>
               )}
 
-              {operationLog && (
+              {timelineEntries.length === 0 ? (
+                <p style={{ color: '#9ca3af' }}>No operations or UI events recorded yet</p>
+              ) : (
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px'
                 }}>
-                  {operationLog.length === 0 ? (
-                    <p style={{ color: '#9ca3af' }}>No operations found</p>
-                  ) : (
-                    (() => {
-                      // Build a map for quick lookup
-                      const opMap = new Map<string, typeof operationLog[0]>();
-                      operationLog.forEach(entry => {
-                        opMap.set(entry.fullOperationId, entry);
-                      });
-
-                      // Helper to extract target operation ID from undo/redo description
-                      function extractTargetOperationId(description: string): string | null {
-                        const match = description.match(/restore to operation ([a-f0-9]+)/);
-                        return match ? match[1] : null;
-                      }
-
-                      // Follow the chain of undo/redo operations and return all IDs in the chain
-                      function followChain(startOpId: string): Set<string> {
-                        const chain = new Set<string>();
-                        let currentId: string | null = startOpId;
-                        const visited = new Set<string>(); // Prevent infinite loops
-
-                        while (currentId && !visited.has(currentId)) {
-                          visited.add(currentId);
-                          chain.add(currentId);
-
-                          const op = opMap.get(currentId);
-                          if (!op) break;
-
-                          const isUndoOrRedo = op.operationDescription.startsWith('undo:') ||
-                                               op.operationDescription.startsWith('redo:');
-                          if (!isUndoOrRedo) break;
-
-                          currentId = extractTargetOperationId(op.operationDescription);
-                        }
-
-                        return chain;
-                      }
-
-                      // Group consecutive snapshots
-                      const groups: Array<{ type: 'single' | 'snapshots'; entries: typeof operationLog }> = [];
-                      let currentSnapshotGroup: typeof operationLog = [];
-
-                      operationLog.forEach((entry) => {
-                        const isSnapshot = entry.operationDescription === 'snapshot working copy';
-                        if (isSnapshot) {
-                          currentSnapshotGroup.push(entry);
-                        } else {
-                          if (currentSnapshotGroup.length > 0) {
-                            groups.push({ type: 'snapshots', entries: currentSnapshotGroup });
-                            currentSnapshotGroup = [];
-                          }
-                          groups.push({ type: 'single', entries: [entry] });
-                        }
-                      });
-                      if (currentSnapshotGroup.length > 0) {
-                        groups.push({ type: 'snapshots', entries: currentSnapshotGroup });
-                      }
-
-                      return groups.map((group, groupIdx) => {
-                        if (group.type === 'snapshots' && group.entries.length > 1) {
-                          const isExpanded = expandedSnapshots.has(groupIdx);
-                          return (
-                            <div key={`group-${groupIdx}`}>
-                              <div
-                                onClick={() => {
-                                  const newExpanded = new Set(expandedSnapshots);
-                                  if (isExpanded) {
-                                    newExpanded.delete(groupIdx);
-                                  } else {
-                                    newExpanded.add(groupIdx);
-                                  }
-                                  setExpandedSnapshots(newExpanded);
-                                }}
-                                style={{
-                                  padding: '12px 16px',
-                                  background: '#f3f4f6',
-                                  border: '1px solid #d1d5db',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  opacity: 0.6,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                }}
-                              >
-                                <span style={{ fontSize: '14px' }}>{isExpanded ? '▼' : '▶'}</span>
-                                <span style={{ fontSize: '14px' }}>📸</span>
-                                <span style={{ fontSize: '14px', color: '#6b7280' }}>
-                                  {group.entries.length} snapshots
-                                </span>
-                              </div>
-                              {isExpanded && (
-                                <div style={{ marginLeft: '24px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  {group.entries.map((entry) => renderOperation(entry))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        } else {
-                          return group.entries.map((entry) => renderOperation(entry));
-                        }
-                      });
-
-                      function renderOperation(entry: OpLogEntry) {
-                        const isUndo = entry.operationDescription.startsWith('undo:');
-                        const isRedo = entry.operationDescription.startsWith('redo:');
-                        const isSnapshot = entry.operationDescription === 'snapshot working copy';
-                        const isHighlighted = highlightedOps.has(entry.fullOperationId);
-
-                        const getOpStyle = () => {
-                          if (isUndo) return { bg: '#fef3c7', border: '#fbbf24', icon: '↶' };
-                          if (isRedo) return { bg: '#dbeafe', border: '#3b82f6', icon: '↷' };
-                          if (isSnapshot) return { bg: '#f3f4f6', border: '#d1d5db', icon: '📸' };
-                          return { bg: '#ffffff', border: '#e5e7eb', icon: '⚙️' };
-                        };
-
-                        const style = getOpStyle();
-
-                        // Extract target operation ID if this is an undo/redo
-                        const targetOpId = (isUndo || isRedo) ? extractTargetOperationId(entry.operationDescription) : null;
-
-                        return (
-                          <div
-                            key={entry.operationId}
-                            onMouseEnter={() => {
-                              if (targetOpId) {
-                                const chain = followChain(targetOpId);
-                                setHighlightedOps(chain);
-                              }
-                            }}
-                            onMouseLeave={() => {
-                              if (targetOpId) {
-                                setHighlightedOps(new Set());
-                              }
-                            }}
-                            style={{
-                              padding: '12px 16px',
-                              background: isHighlighted ? '#fde047' : style.bg,
-                              border: isHighlighted ? '2px solid #eab308' : `1px solid ${style.border}`,
-                              borderRadius: '6px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '4px',
-                              opacity: isSnapshot ? 0.6 : 1,
-                              cursor: (isUndo || isRedo) ? 'pointer' : 'default',
-                              boxShadow: isHighlighted ? '0 0 0 3px rgba(234, 179, 8, 0.3)' : 'none',
-                            }}
-                          >
-                            <div style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              gap: '12px',
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '14px' }}>{style.icon}</span>
-                                <span style={{
-                                  fontFamily: 'monospace',
-                                  fontSize: '12px',
-                                  color: '#6b7280',
-                                  fontWeight: '500',
-                                }}>
-                                  {entry.operationId}
-                                </span>
-                              </div>
-                              <span
-                                title={entry.timestamp}
-                                style={{
-                                  fontSize: '12px',
-                                  color: '#9ca3af',
-                                  cursor: 'help',
-                                }}
-                              >
-                                {humanizeTime(entry.timestamp)}
-                              </span>
-                            </div>
-                            <div
-                              title={entry.operationDescription}
-                              style={{
-                                fontSize: '14px',
-                                color: '#1f2937',
-                                fontWeight: isSnapshot ? '400' : '500',
-                              }}
-                            >
-                              {shortenOpDescription(entry.operationDescription)}
-                            </div>
-                            <div style={{
-                              fontSize: '12px',
-                              color: '#6b7280',
-                            }}>
-                              User: {entry.user}
-                            </div>
-                          </div>
-                        );
-                      }
-                    })()
-                  )}
+                  {timelineEntries.map((entry) => {
+                    if (entry.kind === 'operation') {
+                      return renderOperationCard(entry.entry);
+                    }
+                    if (entry.kind === 'snapshot-group') {
+                      return renderSnapshotGroupCard(entry.key, entry.entries);
+                    }
+                    return renderUiOperationCard(entry.entry);
+                  })}
                 </div>
               )}
             </div>

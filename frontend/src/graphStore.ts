@@ -6,11 +6,142 @@ import { mutations } from './api';
 
 type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
 
+declare const UiOperationIdBrand: unique symbol;
+export type UiOperationId = string & { readonly [UiOperationIdBrand]: true };
+
+export type UiOperationStatus = 'triggered' | 'succeeded' | 'failed';
+
+export type UiOperationKind =
+  | { readonly type: 'intention-command'; readonly command: IntentionCommand }
+  | { readonly type: 'legacy-command'; readonly command: GitCommand }
+  | { readonly type: 'button'; readonly button: 'undo' | 'redo' | 'other' };
+
+export interface UiOperationLogEntry {
+  readonly id: UiOperationId;
+  readonly timestamp: string;
+  readonly description: string;
+  readonly kind: UiOperationKind;
+  readonly status: UiOperationStatus;
+  readonly opLogHeadAtCreation?: string;
+  readonly errorMessage?: string;
+}
+
+interface UiOperationDraft {
+  readonly description: string;
+  readonly kind: UiOperationKind;
+}
+
+const UI_OPERATION_LOG_LIMIT = 200;
+
+let uiOperationCounter = 0;
+
+function createUiOperationId(): UiOperationId {
+  uiOperationCounter += 1;
+  return `ui-${uiOperationCounter}` as UiOperationId;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled variant: ${JSON.stringify(value)}`);
+}
+
+function shortId(id: string): string {
+  return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function summariseCommandTarget(target: CommandTarget): string {
+  switch (target.type) {
+    case 'before':
+      return `before ${shortId(target.commitId)}`;
+    case 'after':
+      return `after ${shortId(target.commitId)}`;
+    case 'between':
+      return `between ${shortId(target.beforeCommitId)} ⇢ ${shortId(target.afterCommitId)}`;
+    case 'new-branch':
+      return `new branch from ${shortId(target.fromCommitId)}`;
+    case 'new-commit-between':
+      return `new commit between ${shortId(target.beforeCommitId)} ⇢ ${shortId(target.afterCommitId)}`;
+    case 'existing-commit':
+      return `existing commit ${shortId(target.commitId)}`;
+    default:
+      return assertNever(target);
+  }
+}
+
+function describeFileCount(files: readonly FileChange[]): string {
+  if (files.length === 0) {
+    return 'no files';
+  }
+  if (files.length === 1) {
+    return files[0]?.path ?? '1 file';
+  }
+  const [first, second] = files;
+  if (!first || !second) {
+    return `${files.length} files`;
+  }
+  return `${files.length} files (${first.path}, ${second.path}${files.length > 2 ? ', ...' : ''})`;
+}
+
+function describeIntentionCommand(command: IntentionCommand): string {
+  switch (command.type) {
+    case 'move-file-to-change':
+      return `Move ${command.file.path} from ${shortId(command.sourceChangeId)} to ${shortId(command.targetChangeId)}`;
+    case 'split-file-from-change':
+      return `Split ${command.file.path} from ${shortId(command.sourceChangeId)} to ${summariseCommandTarget(command.target)}`;
+    case 'rebase-change':
+      return `Rebase ${shortId(command.changeId)} onto ${summariseCommandTarget(command.newParent)}`;
+    case 'reorder-change':
+      return `Reorder ${shortId(command.changeId)} to ${summariseCommandTarget(command.newPosition)}`;
+    case 'squash-change-into':
+      return `Squash ${shortId(command.sourceChangeId)} into ${shortId(command.targetChangeId)}`;
+    case 'split-at-evolog':
+      return `Split ${shortId(command.changeId)} at evolog entry ${shortId(command.entryCommitId)}`;
+    case 'create-new-change':
+      return `Create change at ${summariseCommandTarget(command.parent)} with ${describeFileCount(command.files)}`;
+    case 'update-change-description': {
+      const snippet = command.description.trim().replace(/\s+/g, ' ');
+      const truncated = snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet;
+      return `Update description for ${shortId(command.commitId)} to "${truncated}"`;
+    }
+    case 'abandon-change':
+      return `Abandon change ${shortId(command.commitId)}`;
+    case 'checkout-change':
+      return `Checkout change ${shortId(command.commitId)}`;
+    case 'move-bookmark':
+      return `Move bookmark ${String(command.bookmarkName)} to ${shortId(command.targetCommitId)}`;
+    case 'delete-bookmark':
+      return `Delete bookmark ${String(command.bookmarkName)}`;
+    case 'add-bookmark':
+      return `Add bookmark ${String(command.bookmarkName)} at ${shortId(command.targetCommitId)}`;
+    case 'hunk-split': {
+      const count = command.hunkRanges.length;
+      return `Split ${count} hunk${count === 1 ? '' : 's'} from ${shortId(command.sourceCommitId)} to ${summariseCommandTarget(command.target)}`;
+    }
+    default:
+      return assertNever(command);
+  }
+}
+
+function describeLegacyGitCommand(command: GitCommand): string {
+  switch (command.type) {
+    case 'rebase':
+      return `Legacy rebase ${shortId(command.commitId)} onto ${summariseCommandTarget(command.target)}`;
+    case 'squash':
+      return `Legacy squash ${shortId(command.sourceCommitId)} into ${shortId(command.targetCommitId)}`;
+    case 'split':
+      return `Legacy split ${shortId(command.sourceCommitId)} via ${summariseCommandTarget(command.target)} with ${describeFileCount(command.files)}`;
+    case 'move-files':
+      return `Legacy move ${describeFileCount(command.files)} from ${shortId(command.sourceCommitId)} to ${shortId(command.targetCommitId)}`;
+    default:
+      return describeIntentionCommand(command as IntentionCommand);
+  }
+}
+
 interface GraphState {
   // Data
   commitGraph: CommitGraph | null;
   currentCommitId: CommitId | null;
   operationLog: OpLogEntry[] | null;
+  uiOperationLog: readonly UiOperationLogEntry[];
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
   divergentChangeIds: ReadonlySet<ChangeId>;
@@ -20,6 +151,8 @@ interface GraphState {
   setCommitGraph: (commitGraph: CommitGraph) => void;
   setCurrentCommitId: (commitId: CommitId | null) => void;
   setOperationLog: (operationLog: OpLogEntry[]) => void;
+  logUiOperation: (draft: UiOperationDraft) => UiOperationId;
+  updateUiOperationStatus: (operationId: UiOperationId, status: UiOperationStatus, errorMessage?: string) => void;
   setRepoPath: (repoPath: string) => void;
   setDivergentChangeIds: (changeIds: ReadonlySet<ChangeId>) => void;
   setBookmarks: (bookmarks: readonly Bookmark[] | undefined) => void;
@@ -55,6 +188,7 @@ export const useGraphStore = create<GraphState>()(
       commitGraph: null,
       currentCommitId: null,
       operationLog: null,
+      uiOperationLog: [],
       isExecutingCommand: false,
       repoPath: '',
       divergentChangeIds: new Set<ChangeId>(),
@@ -71,6 +205,57 @@ export const useGraphStore = create<GraphState>()(
 
       setOperationLog: (operationLog) => {
         set({ operationLog });
+      },
+
+      logUiOperation: (draft) => {
+        const { operationLog } = get();
+        const id = createUiOperationId();
+        const timestamp = new Date().toISOString();
+        const opLogHeadAtCreation = operationLog?.[0]?.fullOperationId;
+        const entry: UiOperationLogEntry = {
+          id,
+          timestamp,
+          description: draft.description,
+          kind: draft.kind,
+          status: 'triggered',
+          opLogHeadAtCreation,
+        };
+
+        set((state) => {
+          const existing = state.uiOperationLog;
+          const trimmed =
+            existing.length >= UI_OPERATION_LOG_LIMIT
+              ? existing.slice(existing.length - (UI_OPERATION_LOG_LIMIT - 1))
+              : existing;
+          return {
+            uiOperationLog: [...trimmed, entry],
+          };
+        });
+
+        return id;
+      },
+
+      updateUiOperationStatus: (operationId, status, errorMessage) => {
+        set((state) => {
+          const index = state.uiOperationLog.findIndex((entry) => entry.id === operationId);
+          if (index === -1) {
+            return state;
+          }
+          const existing = state.uiOperationLog[index];
+          const updated: UiOperationLogEntry = {
+            ...existing,
+            status,
+            errorMessage,
+          };
+
+          return {
+            uiOperationLog: [
+              ...state.uiOperationLog.slice(0, index),
+              updated,
+              ...state.uiOperationLog.slice(index + 1),
+            ],
+          };
+        });
       },
 
       // Set repository path
@@ -115,13 +300,21 @@ export const useGraphStore = create<GraphState>()(
         }
 
         console.log('🎯 EXECUTING INTENTION COMMAND:', command);
+        const operationId = get().logUiOperation({
+          description: describeIntentionCommand(command),
+          kind: { type: 'intention-command', command },
+        });
         set({ isExecutingCommand: true });
 
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Intention command executed successfully');
+          get().updateUiOperationStatus(operationId, 'succeeded');
         } catch (error) {
           console.error('❌ Intention command execution failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          get().updateUiOperationStatus(operationId, 'failed', message);
+          throw error;
         } finally {
           set({ isExecutingCommand: false });
         }
@@ -264,14 +457,22 @@ export const useGraphStore = create<GraphState>()(
 
         const command: GitCommand = { type: 'rebase', commitId, target };
         console.log('🔄 REBASE COMMAND:', command);
+        const operationId = get().logUiOperation({
+          description: describeLegacyGitCommand(command),
+          kind: { type: 'legacy-command', command },
+        });
 
         set({ isExecutingCommand: true });
 
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Rebase command executed successfully');
+          get().updateUiOperationStatus(operationId, 'succeeded');
         } catch (error) {
           console.error('❌ Rebase command execution failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          get().updateUiOperationStatus(operationId, 'failed', message);
+          throw error;
         } finally {
           set({ isExecutingCommand: false });
         }
@@ -286,14 +487,22 @@ export const useGraphStore = create<GraphState>()(
 
         const command: GitCommand = { type: 'squash', sourceCommitId, targetCommitId };
         console.log('🔧 SQUASH COMMAND:', command);
+        const operationId = get().logUiOperation({
+          description: describeLegacyGitCommand(command),
+          kind: { type: 'legacy-command', command },
+        });
 
         set({ isExecutingCommand: true });
 
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Squash command executed successfully');
+          get().updateUiOperationStatus(operationId, 'succeeded');
         } catch (error) {
           console.error('❌ Squash command execution failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          get().updateUiOperationStatus(operationId, 'failed', message);
+          throw error;
         } finally {
           set({ isExecutingCommand: false });
         }
@@ -308,14 +517,22 @@ export const useGraphStore = create<GraphState>()(
 
         const command: GitCommand = { type: 'split', sourceCommitId, files, target };
         console.log('✂️ SPLIT COMMAND:', command);
+        const operationId = get().logUiOperation({
+          description: describeLegacyGitCommand(command),
+          kind: { type: 'legacy-command', command },
+        });
 
         set({ isExecutingCommand: true });
 
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Split command executed successfully');
+          get().updateUiOperationStatus(operationId, 'succeeded');
         } catch (error) {
           console.error('❌ Split command execution failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          get().updateUiOperationStatus(operationId, 'failed', message);
+          throw error;
         } finally {
           set({ isExecutingCommand: false });
         }
@@ -330,14 +547,22 @@ export const useGraphStore = create<GraphState>()(
 
         const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files };
         console.log('📁 MOVE FILES COMMAND:', command);
+        const operationId = get().logUiOperation({
+          description: describeLegacyGitCommand(command),
+          kind: { type: 'legacy-command', command },
+        });
 
         set({ isExecutingCommand: true });
 
         try {
           await mutations.executeCommand.mutate({ repoPath, command });
           console.log('✅ Move files command executed successfully');
+          get().updateUiOperationStatus(operationId, 'succeeded');
         } catch (error) {
           console.error('❌ Move files command execution failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          get().updateUiOperationStatus(operationId, 'failed', message);
+          throw error;
         } finally {
           set({ isExecutingCommand: false });
         }
