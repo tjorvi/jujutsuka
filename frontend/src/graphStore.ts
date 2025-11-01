@@ -226,11 +226,11 @@ function summariseCommandTarget(target: CommandTarget): string {
     case 'after':
       return `after ${shortId(target.commitId)}`;
     case 'between':
-      return `between ${shortId(target.beforeCommitId)} ⇢ ${shortId(target.afterCommitId)}`;
+      return `after ${shortId(target.beforeCommitId)} and before ${shortId(target.afterCommitId)}`;
     case 'new-branch':
       return `new branch from ${shortId(target.fromCommitId)}`;
     case 'new-commit-between':
-      return `new commit between ${shortId(target.beforeCommitId)} ⇢ ${shortId(target.afterCommitId)}`;
+      return `new commit after ${shortId(target.beforeCommitId)} and before ${shortId(target.afterCommitId)}`;
     case 'existing-commit':
       return `existing commit ${shortId(target.commitId)}`;
     default:

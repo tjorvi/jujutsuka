@@ -400,11 +400,11 @@ function App() {
       case 'after':
         return <>after <CommitChangeToken commitId={target.commitId} changeId={changeForCommit(entry, target.commitId)} /></>;
       case 'between':
-        return <>between <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
+        return <>after <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and before <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
       case 'new-branch':
         return <>a branch from <CommitChangeToken commitId={target.fromCommitId} changeId={changeForCommit(entry, target.fromCommitId)} /></>;
       case 'new-commit-between':
-        return <>a new commit between <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
+        return <>a new commit after <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and before <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
       case 'existing-commit':
         return <>existing commit <CommitChangeToken commitId={target.commitId} changeId={changeForCommit(entry, target.commitId)} /></>;
       default:
