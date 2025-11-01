@@ -162,3 +162,30 @@ export const MixedMergeStatus: Story = {
         },
     },
 };
+
+export const ManyParallelMergedBranches: Story = {
+    name: "Many Parallel Merged Branches (30)",
+    args: {
+        graph: (() => {
+            const branchCount = 30;
+            const mainlineNodes = [0, 1, 2, 3, 500, 501];
+            const branchNodes = Array.from({ length: branchCount }, (_, index) => 1001 + index);
+            const mainlineEdges: [number, number][] = [
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 500],
+                [500, 501],
+            ];
+            const branchEdges = branchNodes.flatMap((branchNode): [number, number][] => [
+                [1, branchNode],
+                [branchNode, 500],
+            ]);
+
+            return {
+                nodes: [...mainlineNodes, ...branchNodes],
+                edges: [...mainlineEdges, ...branchEdges],
+            };
+        })(),
+    },
+};
