@@ -92,10 +92,13 @@ export function ChangeCard({
   onCommitSelect,
 }: ChangeCardProps) {
   const { handleFileDrop, handleCommitDrop, handleBookmarkDrop, handleHunkDrop } = useDragDrop();
+  const hoveredCommitIds = useGraphStore(state => state.hoveredCommitIds);
+  const hoveredChangeIds = useGraphStore(state => state.hoveredChangeIds);
 
   const [isHovered, setIsHovered] = useState(false);
   const [isBeingDragged, setIsBeingDragged] = useState(false);
 
+  const changeId = commit.changeId as ChangeId;
   const sizeIndicator = useMemo(() => getCommitSizeIndicator(stats), [stats]);
   const trimmedDescription = useMemo(() => commit.description.trim(), [commit.description]);
   const summaryDescription = useMemo(() => {
@@ -110,7 +113,6 @@ export function ChangeCard({
   const handleDragStart = (event: React.DragEvent) => {
     event.stopPropagation();
     setIsBeingDragged(true);
-    const changeId = commit.changeId as ChangeId;
     dragChange(event, { source: 'change', changeId, commitId });
   };
 
@@ -189,6 +191,9 @@ export function ChangeCard({
   };
 
   const commitTimestamp = commit.timestamp.toLocaleDateString();
+  const isCommitHover = hoveredCommitIds.has(commitId);
+  const isChangeHover = hoveredChangeIds.has(changeId);
+  const highlightState = isCommitHover || isChangeHover ? (isCommitHover && isChangeHover ? 'full' : 'partial') : undefined;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -201,6 +206,7 @@ export function ChangeCard({
         data-current={isCurrent ? 'true' : 'false'}
         data-being-dragged={isBeingDragged ? 'true' : 'false'}
         data-hovered={isHovered && !isSelected ? 'true' : 'false'}
+        data-highlighted={highlightState}
         data-parallel={isInParallelGroup ? 'true' : 'false'}
         data-conflict={commit.hasConflicts ? 'true' : 'false'}
         data-divergent={isDivergent ? 'true' : 'false'}

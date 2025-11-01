@@ -1,13 +1,15 @@
 import type { OpLogEntry } from "../../backend/src/repo-parser";
 import type { UiOperationLogEntry } from "./graphStore";
+import type { ReactNode } from 'react';
 
 interface LatestUiOperationPanelProps {
   readonly latestUiOperation: UiOperationLogEntry;
-  readonly operationsAfter: readonly OpLogEntry[];
+  readonly operationsDuring: readonly OpLogEntry[];
   readonly humanizeTime: (timestamp: string) => string;
   readonly shortenOpDescription: (description: string) => string;
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
+  readonly summary: ReactNode;
 }
 
 const statusStyles: Record<UiOperationLogEntry['status'], { readonly border: string; readonly background: string; readonly label: string; readonly text: string }> = {
@@ -35,16 +37,17 @@ function describeKind(kind: UiOperationLogEntry['kind']): string {
 
 export function LatestUiOperationPanel({
   latestUiOperation,
-  operationsAfter,
+  operationsDuring,
   humanizeTime,
   shortenOpDescription,
   isExpanded,
   onToggle,
+  summary,
 }: LatestUiOperationPanelProps) {
   const statusStyle = statusStyles[latestUiOperation.status];
-  const operationsSummary = operationsAfter.length === 0
+  const operationsSummary = operationsDuring.length === 0
     ? 'No repo ops yet'
-    : `${operationsAfter.length} repo op${operationsAfter.length === 1 ? '' : 's'} after`;
+    : `${operationsDuring.length} repo op${operationsDuring.length === 1 ? '' : 's'} during`;
 
   return (
     <div
@@ -100,7 +103,7 @@ export function LatestUiOperationPanel({
             }}
             title={latestUiOperation.description}
           >
-            {latestUiOperation.description}
+            {summary}
           </div>
         </div>
         <button
@@ -134,21 +137,26 @@ export function LatestUiOperationPanel({
               Op head recorded as {latestUiOperation.opLogHeadAtCreation.slice(0, 12)}
             </div>
           )}
+          {latestUiOperation.opLogHeadAtCompletion && (
+            <div style={{ color: '#6b7280' }}>
+              Op head after action {latestUiOperation.opLogHeadAtCompletion.slice(0, 12)}
+            </div>
+          )}
         </div>
       </div>
 
       {isExpanded && (
         <div style={{ borderTop: '1px solid #e5e7eb', background: '#f9fafb', padding: '12px 16px', maxHeight: '220px', overflowY: 'auto' }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '8px' }}>
-            Repository operations after this UI action
+            Repository operations during this UI action
           </div>
-          {operationsAfter.length === 0 ? (
+          {operationsDuring.length === 0 ? (
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              No repository operations recorded after this UI action yet.
+              No repository operations recorded during this UI action yet.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {operationsAfter.map((entry) => (
+              {operationsDuring.map((entry) => (
                 <div
                   key={entry.operationId}
                   style={{

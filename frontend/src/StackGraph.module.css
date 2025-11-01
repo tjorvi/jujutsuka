@@ -159,6 +159,20 @@ body[data-dragging="true"] .dropZoneLinear[data-over="true"],
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
 
+.commitCard[data-highlighted="partial"] {
+  border: 2px solid #38bdf8;
+  border-left: 3px solid #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+  background: #f0f9ff;
+}
+
+.commitCard[data-highlighted="full"] {
+  border: 2px solid #0ea5e9;
+  border-left: 3px solid #0ea5e9;
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.45);
+  background: #e0f2fe;
+}
+
 /* Empty commit styling */
 .commitCard[data-empty="true"]:not([data-selected="true"]):not([data-current="true"]):not([data-conflict="true"]) {
   border: 1px dashed #d1d5db;

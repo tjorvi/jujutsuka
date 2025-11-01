@@ -331,6 +331,7 @@ export const appRouter = router({
       };
       
       const repoPath = input.repoPath;
+      const opLogBefore = await getOperationLog(repoPath);
 
       try {
         // Handle intention-based commands
@@ -441,8 +442,12 @@ export const appRouter = router({
         }
         
         console.log('✅ Command executed successfully');
-        return { success: true, message: `Command ${command.type} executed successfully` };
-        
+        const opLogAfter = await getOperationLog(repoPath);
+        return {
+          success: true as const,
+          opLogBefore,
+          opLogAfter,
+        };
       } catch (error) {
         console.error('❌ Command execution failed:', error);
         throw new Error(`Failed to execute ${command.type} command: ${error instanceof Error ? error.message : String(error)}`);

@@ -6,7 +6,9 @@ import { Settings } from './Settings';
 import { DragDropProvider } from './DragDropContext';
 import { useState, useEffect, useMemo } from 'react';
 import { LatestUiOperationPanel } from './LatestUiOperationPanel';
-import type { CommitId, OpLogEntry } from "../../backend/src/repo-parser";
+import { CommitChangeToken } from './IdBadges';
+import type { CommitId, OpLogEntry, ChangeId } from "../../backend/src/repo-parser";
+import type { CommandTarget, IntentionCommand, GitCommand } from './commands';
 import { useGraphData } from './useGraphData';
 import { useGraphStore } from './graphStore';
 import type { UiOperationLogEntry } from './graphStore';
@@ -47,6 +49,7 @@ function App() {
   const logUiOperation = useGraphStore(state => state.logUiOperation);
   const updateUiOperationStatus = useGraphStore(state => state.updateUiOperationStatus);
   const uiOperationLog = useGraphStore(state => state.uiOperationLog);
+  const commitGraphState = useGraphStore(state => state.commitGraph);
 
   // Save directory to localStorage and sync to store whenever it changes
   useEffect(() => {
@@ -81,16 +84,21 @@ function App() {
       kind: { type: 'button', button: 'undo' },
     });
     if (!repoDirectory) {
-      updateUiOperationStatus(operationId, 'failed', 'Repository path is not set');
+      updateUiOperationStatus(operationId, 'failed', { errorMessage: 'Repository path is not set' });
       return;
     }
     try {
       await trpc.undo.mutate({ repoPath: repoDirectory });
-      updateUiOperationStatus(operationId, 'succeeded');
+      const completionHead = useGraphStore.getState().operationLog?.[0]?.fullOperationId;
+      updateUiOperationStatus(operationId, 'succeeded', { opLogHeadAtCompletion: completionHead });
     } catch (error) {
       console.error('Undo failed:', error);
       const message = error instanceof Error ? error.message : String(error);
-      updateUiOperationStatus(operationId, 'failed', message);
+      const completionHead = useGraphStore.getState().operationLog?.[0]?.fullOperationId;
+      updateUiOperationStatus(operationId, 'failed', {
+        errorMessage: message,
+        opLogHeadAtCompletion: completionHead,
+      });
       throw error;
     }
   };
@@ -101,16 +109,21 @@ function App() {
       kind: { type: 'button', button: 'redo' },
     });
     if (!repoDirectory) {
-      updateUiOperationStatus(operationId, 'failed', 'Repository path is not set');
+      updateUiOperationStatus(operationId, 'failed', { errorMessage: 'Repository path is not set' });
       return;
     }
     try {
       await trpc.redo.mutate({ repoPath: repoDirectory });
-      updateUiOperationStatus(operationId, 'succeeded');
+      const completionHead = useGraphStore.getState().operationLog?.[0]?.fullOperationId;
+      updateUiOperationStatus(operationId, 'succeeded', { opLogHeadAtCompletion: completionHead });
     } catch (error) {
       console.error('Redo failed:', error);
       const message = error instanceof Error ? error.message : String(error);
-      updateUiOperationStatus(operationId, 'failed', message);
+      const completionHead = useGraphStore.getState().operationLog?.[0]?.fullOperationId;
+      updateUiOperationStatus(operationId, 'failed', {
+        errorMessage: message,
+        opLogHeadAtCompletion: completionHead,
+      });
       throw error;
     }
   };
@@ -152,9 +165,25 @@ function App() {
     return Date.now();
   };
 
+  const uiOperationIntervals = useMemo(() => {
+    return uiOperationLog.map((entry) => {
+      const startMsRaw = Date.parse(entry.timestamp);
+      const startMs = Number.isNaN(startMsRaw) ? Number.NEGATIVE_INFINITY : startMsRaw;
+      const endMsRaw = entry.completedAt ? Date.parse(entry.completedAt) : Number.POSITIVE_INFINITY;
+      const endMs = Number.isNaN(endMsRaw) ? Number.POSITIVE_INFINITY : endMsRaw;
+      return {
+        entry,
+        startMs,
+        endMs,
+      };
+    });
+  }, [uiOperationLog]);
+
+  type AssociatedOperation = { entry: OpLogEntry; associatedUi?: UiOperationLogEntry };
+
   type OperationTimelineEntry =
-    | { kind: 'operation'; entry: OpLogEntry; timestampMs: number; key: string }
-    | { kind: 'snapshot-group'; entries: OpLogEntry[]; timestampMs: number; key: string };
+    | { kind: 'operation'; entry: OpLogEntry; associatedUi?: UiOperationLogEntry; timestampMs: number; key: string }
+    | { kind: 'snapshot-group'; entries: AssociatedOperation[]; timestampMs: number; key: string };
 
   type TimelineEntry =
     | (OperationTimelineEntry & { sequence: number })
@@ -165,23 +194,42 @@ function App() {
       return [];
     }
 
+    const findAssociatedUiOperation = (entry: OpLogEntry): UiOperationLogEntry | undefined => {
+      const entryMs = parseOpTimestamp(entry.timestamp);
+      if (Number.isNaN(entryMs)) {
+        return undefined;
+      }
+      for (let index = uiOperationIntervals.length - 1; index >= 0; index -= 1) {
+        const interval = uiOperationIntervals[index];
+        if (entryMs < interval.startMs) {
+          continue;
+        }
+        if (entryMs <= interval.endMs) {
+          return interval.entry;
+        }
+      }
+      return undefined;
+    };
+
     const timeline: OperationTimelineEntry[] = [];
-    let snapshotBuffer: OpLogEntry[] = [];
+    let snapshotBuffer: AssociatedOperation[] = [];
     let snapshotGroupCount = 0;
 
     for (const entry of operationLog) {
+      const associatedUi = findAssociatedUiOperation(entry);
       const isSnapshot = entry.operationDescription === 'snapshot working copy';
       if (isSnapshot) {
-        snapshotBuffer.push(entry);
+        snapshotBuffer.push({ entry, associatedUi });
         continue;
       }
 
       if (snapshotBuffer.length > 0) {
         const groupKey = `snapshots-${snapshotGroupCount}`;
+        const firstTimestamp = snapshotBuffer[0]?.entry.timestamp ?? entry.timestamp;
         timeline.push({
           kind: 'snapshot-group',
           entries: snapshotBuffer,
-          timestampMs: parseOpTimestamp(snapshotBuffer[0].timestamp),
+          timestampMs: parseOpTimestamp(firstTimestamp),
           key: groupKey,
         });
         snapshotGroupCount += 1;
@@ -191,6 +239,7 @@ function App() {
       timeline.push({
         kind: 'operation',
         entry,
+        associatedUi,
         timestampMs: parseOpTimestamp(entry.timestamp),
         key: entry.fullOperationId,
       });
@@ -198,16 +247,17 @@ function App() {
 
     if (snapshotBuffer.length > 0) {
       const groupKey = `snapshots-${snapshotGroupCount}`;
+      const firstTimestamp = snapshotBuffer[0]?.entry.timestamp;
       timeline.push({
         kind: 'snapshot-group',
         entries: snapshotBuffer,
-        timestampMs: parseOpTimestamp(snapshotBuffer[0].timestamp),
+        timestampMs: parseOpTimestamp(firstTimestamp ?? new Date().toISOString()),
         key: groupKey,
       });
     }
 
     return timeline;
-  }, [operationLog]);
+  }, [operationLog, uiOperationIntervals]);
 
   const timelineEntries: TimelineEntry[] = useMemo(() => {
     const base = operationTimeline.map((entry, index) => ({
@@ -244,23 +294,47 @@ function App() {
 
   const latestUiOperation = uiOperationLog.length > 0 ? uiOperationLog[uiOperationLog.length - 1] : undefined;
 
-  const operationsAfterLatestUi: readonly OpLogEntry[] = useMemo(() => {
+  const operationsDuringLatestUi: readonly OpLogEntry[] = useMemo(() => {
+    if (latestUiOperation?.opLogEntriesDuring) {
+      return latestUiOperation.opLogEntriesDuring;
+    }
     if (!latestUiOperation || !operationLog) {
       return [];
     }
-    const pivot = latestUiOperation.opLogHeadAtCreation;
-    if (!pivot) {
-      return operationLog;
-    }
+    const startMsRaw = Date.parse(latestUiOperation.timestamp);
+    const startMs = Number.isNaN(startMsRaw) ? Number.NEGATIVE_INFINITY : startMsRaw;
+    const endMsRaw = latestUiOperation.completedAt ? Date.parse(latestUiOperation.completedAt) : Number.POSITIVE_INFINITY;
+    const endMs = Number.isNaN(endMsRaw) ? Number.POSITIVE_INFINITY : endMsRaw;
+    const pivot = latestUiOperation.opLogHeadAtCreation ?? null;
+    const completionId = latestUiOperation.opLogHeadAtCompletion ?? null;
 
-    const entries: OpLogEntry[] = [];
+    const collected: OpLogEntry[] = [];
+    let collecting = completionId === null;
     for (const entry of operationLog) {
-      if (entry.fullOperationId === pivot) {
+      if (!collecting) {
+        if (entry.fullOperationId === completionId) {
+          collecting = true;
+        } else {
+          continue;
+        }
+      }
+
+      if (pivot && entry.fullOperationId === pivot) {
         break;
       }
-      entries.push(entry);
+
+      const entryMs = parseOpTimestamp(entry.timestamp);
+      if (entryMs < startMs) {
+        break;
+      }
+      if (entryMs > endMs) {
+        continue;
+      }
+
+      collected.push(entry);
     }
-    return entries;
+
+    return collected;
   }, [latestUiOperation, operationLog]);
 
   const opMap = useMemo(() => {
@@ -306,7 +380,102 @@ function App() {
     throw new Error(`Unhandled UI operation kind: ${JSON.stringify(value)}`);
   };
 
-  const renderOperationCard = (entry: OpLogEntry) => {
+  const assertUnreachable = (value: never): never => {
+    throw new Error(`Unhandled variant: ${JSON.stringify(value)}`);
+  };
+
+  const changeForCommit = (entry: UiOperationLogEntry, commitId: CommitId): ChangeId | undefined => {
+    const fromAssociations = entry.relatedCommitAssociations.find(pair => pair.commitId === commitId)?.changeId;
+    if (fromAssociations) {
+      return fromAssociations;
+    }
+    const fromGraph = commitGraphState?.[commitId]?.commit.changeId as ChangeId | undefined;
+    return fromGraph;
+  };
+
+  const renderCommandTarget = (entry: UiOperationLogEntry, target: CommandTarget): React.ReactNode => {
+    switch (target.type) {
+      case 'before':
+        return <>before <CommitChangeToken commitId={target.commitId} changeId={changeForCommit(entry, target.commitId)} /></>;
+      case 'after':
+        return <>after <CommitChangeToken commitId={target.commitId} changeId={changeForCommit(entry, target.commitId)} /></>;
+      case 'between':
+        return <>between <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
+      case 'new-branch':
+        return <>a branch from <CommitChangeToken commitId={target.fromCommitId} changeId={changeForCommit(entry, target.fromCommitId)} /></>;
+      case 'new-commit-between':
+        return <>a new commit between <CommitChangeToken commitId={target.beforeCommitId} changeId={changeForCommit(entry, target.beforeCommitId)} /> and <CommitChangeToken commitId={target.afterCommitId} changeId={changeForCommit(entry, target.afterCommitId)} /></>;
+      case 'existing-commit':
+        return <>existing commit <CommitChangeToken commitId={target.commitId} changeId={changeForCommit(entry, target.commitId)} /></>;
+      default:
+        return assertUnreachable(target as never);
+    }
+  };
+
+  const renderIntentionCommandSummary = (entry: UiOperationLogEntry, command: IntentionCommand): React.ReactNode => {
+    switch (command.type) {
+      case 'rebase-change':
+        return <>Rebase <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> onto {renderCommandTarget(entry, command.newParent)}</>;
+      case 'reorder-change':
+        return <>Reorder <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> to {renderCommandTarget(entry, command.newPosition)}</>;
+      case 'squash-change-into':
+        return <>Squash <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> into <CommitChangeToken commitId={command.targetChangeId} changeId={changeForCommit(entry, command.targetChangeId)} /></>;
+      case 'move-file-to-change':
+        return <>Move <code>{command.file.path}</code> from <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> to <CommitChangeToken commitId={command.targetChangeId} changeId={changeForCommit(entry, command.targetChangeId)} /></>;
+      case 'split-file-from-change':
+        return <>Split <code>{command.file.path}</code> from <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> into {renderCommandTarget(entry, command.target)}</>;
+      case 'split-at-evolog':
+        return <>Split <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> at history entry <CommitChangeToken commitId={command.entryCommitId} changeId={changeForCommit(entry, command.entryCommitId)} /></>;
+      case 'create-new-change':
+        return <>Create new change at {renderCommandTarget(entry, command.parent)}</>;
+      case 'update-change-description':
+        return <>Update description for <CommitChangeToken commitId={command.commitId} changeId={changeForCommit(entry, command.commitId)} /></>;
+      case 'abandon-change':
+        return <>Abandon <CommitChangeToken commitId={command.commitId} changeId={changeForCommit(entry, command.commitId)} /></>;
+      case 'checkout-change':
+        return <>Check out <CommitChangeToken commitId={command.commitId} changeId={changeForCommit(entry, command.commitId)} /></>;
+      case 'move-bookmark':
+        return <>Move bookmark <code>{command.bookmarkName as string}</code> to <CommitChangeToken commitId={command.targetCommitId} changeId={changeForCommit(entry, command.targetCommitId)} /></>;
+      case 'delete-bookmark':
+        return <>Delete bookmark <code>{command.bookmarkName as string}</code></>;
+      case 'add-bookmark':
+        return <>Add bookmark <code>{command.bookmarkName as string}</code> at <CommitChangeToken commitId={command.targetCommitId} changeId={changeForCommit(entry, command.targetCommitId)} /></>;
+      case 'hunk-split':
+        return <>Split {command.hunkRanges.length} hunk{command.hunkRanges.length === 1 ? '' : 's'} from <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> into {renderCommandTarget(entry, command.target)}</>;
+      default:
+        return assertUnreachable(command as never);
+    }
+  };
+
+  const renderLegacyCommandSummary = (entry: UiOperationLogEntry, command: GitCommand): React.ReactNode => {
+    switch (command.type) {
+      case 'rebase':
+        return <>Legacy rebase <CommitChangeToken commitId={command.commitId} changeId={changeForCommit(entry, command.commitId)} /> onto {renderCommandTarget(entry, command.target)}</>;
+      case 'squash':
+        return <>Legacy squash <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> into <CommitChangeToken commitId={command.targetCommitId} changeId={changeForCommit(entry, command.targetCommitId)} /></>;
+      case 'split':
+        return <>Legacy split from <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> into {renderCommandTarget(entry, command.target)}</>;
+      case 'move-files':
+        return <>Legacy move files from <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> to <CommitChangeToken commitId={command.targetCommitId} changeId={changeForCommit(entry, command.targetCommitId)} /></>;
+      default:
+        return assertUnreachable(command as never);
+    }
+  };
+
+  const renderUiOperationSummary = (entry: UiOperationLogEntry): React.ReactNode => {
+    switch (entry.kind.type) {
+      case 'intention-command':
+        return renderIntentionCommandSummary(entry, entry.kind.command);
+      case 'legacy-command':
+        return renderLegacyCommandSummary(entry, entry.kind.command);
+      case 'button':
+        return entry.description;
+      default:
+        return entry.description;
+    }
+  };
+
+  const renderOperationCard = (entry: OpLogEntry, associatedUi?: UiOperationLogEntry) => {
     const isUndo = entry.operationDescription.startsWith('undo:');
     const isRedo = entry.operationDescription.startsWith('redo:');
     const isSnapshot = entry.operationDescription === 'snapshot working copy';
@@ -346,7 +515,11 @@ function App() {
           gap: '4px',
           opacity: isSnapshot ? 0.6 : 1,
           cursor: (isUndo || isRedo) ? 'pointer' : 'default',
-          boxShadow: isHighlighted ? '0 0 0 3px rgba(234, 179, 8, 0.3)' : 'none',
+          boxShadow: isHighlighted
+            ? '0 0 0 3px rgba(234, 179, 8, 0.3)'
+            : associatedUi
+              ? '0 0 0 2px rgba(14, 165, 233, 0.15)'
+              : 'none',
         }}
       >
         <div style={{
@@ -365,6 +538,18 @@ function App() {
             }}>
               {entry.operationId}
             </span>
+            {associatedUi && (
+              <span style={{
+                fontSize: '11px',
+                color: '#0f172a',
+                background: '#bae6fd',
+                borderRadius: '999px',
+                padding: '2px 6px',
+                fontWeight: 600,
+              }}>
+                UI
+              </span>
+            )}
           </div>
           <span
             title={entry.timestamp}
@@ -393,20 +578,34 @@ function App() {
         }}>
           User: {entry.user}
         </div>
+        {associatedUi ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#0369a1' }}>
+            <span>During UI: {renderUiOperationSummary(associatedUi)}</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+            External repository activity
+          </div>
+        )}
       </div>
     );
   };
 
-  const renderSnapshotGroupCard = (groupKey: string, entries: readonly OpLogEntry[]) => {
-    const singleEntry = entries[0];
-    if (!singleEntry) {
+  const renderSnapshotGroupCard = (groupKey: string, entries: readonly AssociatedOperation[]) => {
+    const first = entries[0];
+    if (!first) {
       return null;
     }
     if (entries.length === 1) {
-      return renderOperationCard(singleEntry);
+      return (
+        <div key={groupKey}>
+          {renderOperationCard(first.entry, first.associatedUi)}
+        </div>
+      );
     }
 
     const isExpanded = expandedSnapshots.has(groupKey);
+    const hasUiAssociation = entries.some(item => item.associatedUi);
 
     return (
       <div key={groupKey}>
@@ -437,10 +636,27 @@ function App() {
           <span style={{ fontSize: '14px', color: '#6b7280' }}>
             {entries.length} snapshots
           </span>
+          {hasUiAssociation && (
+            <span style={{
+              marginLeft: 'auto',
+              fontSize: '11px',
+              color: '#0f172a',
+              background: '#bae6fd',
+              borderRadius: '999px',
+              padding: '2px 6px',
+              fontWeight: 600,
+            }}>
+              UI
+            </span>
+          )}
         </div>
         {isExpanded && (
           <div style={{ marginLeft: '24px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {entries.map((entry) => renderOperationCard(entry))}
+            {entries.map(({ entry, associatedUi: associated }, index) => (
+              <div key={`${entry.operationId}-${index}`}>
+                {renderOperationCard(entry, associated)}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -471,6 +687,8 @@ function App() {
           return assertNeverKind(entry.kind);
       }
     })();
+
+    const summaryContent = renderUiOperationSummary(entry);
 
     return (
       <div
@@ -504,7 +722,7 @@ function App() {
           </span>
         </div>
         <div style={{ fontSize: '14px', color: '#111827', fontWeight: 500 }}>
-          {entry.description}
+          {summaryContent}
         </div>
         <div style={{ fontSize: '12px', color: '#4b5563' }}>
           {contextLabel} · Status: {statusStyle.label}
@@ -517,6 +735,11 @@ function App() {
         {entry.opLogHeadAtCreation && (
           <div style={{ fontSize: '11px', color: '#6b7280' }}>
             Op head recorded as {entry.opLogHeadAtCreation.slice(0, 12)}
+          </div>
+        )}
+        {entry.opLogHeadAtCompletion && (
+          <div style={{ fontSize: '11px', color: '#6b7280' }}>
+            Op head after action {entry.opLogHeadAtCompletion.slice(0, 12)}
           </div>
         )}
       </div>
@@ -651,11 +874,12 @@ function App() {
       {latestUiOperation && (
         <LatestUiOperationPanel
           latestUiOperation={latestUiOperation}
-          operationsAfter={operationsAfterLatestUi}
+          operationsDuring={operationsDuringLatestUi}
           humanizeTime={humanizeTime}
           shortenOpDescription={shortenOpDescription}
           isExpanded={isUiPanelExpanded}
           onToggle={() => setIsUiPanelExpanded(prev => !prev)}
+          summary={renderUiOperationSummary(latestUiOperation)}
         />
       )}
 
@@ -694,7 +918,7 @@ function App() {
                 }}>
                   {timelineEntries.map((entry) => {
                     if (entry.kind === 'operation') {
-                      return renderOperationCard(entry.entry);
+                      return renderOperationCard(entry.entry, entry.associatedUi);
                     }
                     if (entry.kind === 'snapshot-group') {
                       return renderSnapshotGroupCard(entry.key, entry.entries);

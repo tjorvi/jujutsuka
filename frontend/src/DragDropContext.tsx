@@ -3,7 +3,7 @@ import { DragDropContext, type FileChangeDragData, type ChangeDragData, type Dro
 import { useGraphStore } from './graphStore';
 
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
-  const { executeRebase, executeSquash, executeSplit, executeMoveFiles, moveBookmark, executeHunkSplit } = useGraphStore();
+  const { rebaseChange, executeSquash, executeSplit, executeMoveFiles, moveBookmark, executeHunkSplit } = useGraphStore();
   const commitGraph = useGraphStore(state => state.commitGraph);
 
   const isAncestor = (possibleAncestor: CommitId, commitId: CommitId): boolean => {
@@ -78,7 +78,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (position.kind === 'before' || position.kind === 'after') {
-      executeRebase(draggedCommitId, {
+      void rebaseChange(draggedCommitId, {
         type: position.kind,
         commitId: position.commit
       });
@@ -86,7 +86,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       const { beforeCommit, afterCommit } = position;
 
       if (isAncestor(beforeCommit, draggedCommitId)) {
-        executeRebase(draggedCommitId, {
+        void rebaseChange(draggedCommitId, {
           type: 'before',
           commitId: beforeCommit,
         });
@@ -94,7 +94,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (isAncestor(afterCommit, draggedCommitId)) {
-        executeRebase(draggedCommitId, {
+        void rebaseChange(draggedCommitId, {
           type: 'after',
           commitId: afterCommit,
         });
@@ -102,7 +102,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (isAncestor(draggedCommitId, beforeCommit)) {
-        executeRebase(draggedCommitId, {
+        void rebaseChange(draggedCommitId, {
           type: 'after',
           commitId: beforeCommit,
         });
@@ -110,25 +110,25 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (isAncestor(draggedCommitId, afterCommit)) {
-        executeRebase(draggedCommitId, {
+        void rebaseChange(draggedCommitId, {
           type: 'before',
           commitId: afterCommit,
         });
         return;
       }
 
-      executeRebase(draggedCommitId, {
+      void rebaseChange(draggedCommitId, {
         type: 'between',
         beforeCommitId: beforeCommit,
         afterCommitId: afterCommit,
       });
     } else if (position.kind === 'new-branch') {
-      executeRebase(draggedCommitId, {
+      void rebaseChange(draggedCommitId, {
         type: 'new-branch',
         fromCommitId: position.commit,
       });
     } else if (position.kind === 'existing') {
-      executeRebase(draggedCommitId, {
+      void rebaseChange(draggedCommitId, {
         type: 'existing-commit',
         commitId: position.commit,
       });
