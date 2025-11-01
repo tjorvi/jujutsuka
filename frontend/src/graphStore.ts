@@ -87,16 +87,33 @@ function addCommitFromTarget(target: CommandTarget | null | undefined, addCommit
   }
 }
 
+interface CommitAssociation {
+  readonly commitId: CommitId;
+  readonly changeId?: ChangeId;
+}
+
 interface OperationContext {
   readonly relatedCommitIds: readonly CommitId[];
   readonly relatedChangeIds: readonly ChangeId[];
-  readonly relatedCommitAssociations: readonly { commitId: CommitId; changeId?: ChangeId }[];
+  readonly relatedCommitAssociations: readonly CommitAssociation[];
 }
 
-function deriveOperationContext(kind: UiOperationKind, commitGraph: CommitGraph | null): OperationContext {
+function deriveOperationContext(
+  kind: UiOperationKind,
+  commitGraph: CommitGraph | null,
+  previousAssociations: readonly CommitAssociation[] = []
+): OperationContext {
   const commitSet = new Set<CommitId>();
   const changeSet = new Set<ChangeId>();
   const commitMap = new Map<CommitId, ChangeId | undefined>();
+
+  for (const { commitId, changeId } of previousAssociations) {
+    commitMap.set(commitId, changeId);
+    commitSet.add(commitId);
+    if (changeId) {
+      changeSet.add(changeId);
+    }
+  }
 
   const registerCommit = (commitId: CommitId | null | undefined, explicitChange?: ChangeId | null) => {
     if (!commitId) return;
@@ -117,28 +134,28 @@ function deriveOperationContext(kind: UiOperationKind, commitGraph: CommitGraph 
   const collectFromCommand = (command: GitCommand | IntentionCommand) => {
     switch (command.type) {
       case 'move-file-to-change':
-        addCommit(command.sourceChangeId);
-        addCommit(command.targetChangeId);
+        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
+        addCommit(command.targetChangeId, command.targetChangeStableId ?? null);
         return;
       case 'split-file-from-change':
-        addCommit(command.sourceChangeId);
+        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
         addCommitFromTarget(command.target, addCommit);
         return;
       case 'rebase-change':
-        addCommit(command.changeId);
+        addCommit(command.changeId, command.changeStableId ?? null);
         addCommitFromTarget(command.newParent, addCommit);
         return;
       case 'reorder-change':
-        addCommit(command.changeId);
+        addCommit(command.changeId, command.changeStableId ?? null);
         addCommitFromTarget(command.newPosition, addCommit);
         return;
       case 'squash-change-into':
-        addCommit(command.sourceChangeId);
-        addCommit(command.targetChangeId);
+        addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
+        addCommit(command.targetChangeId, command.targetChangeStableId ?? null);
         return;
       case 'split-at-evolog':
-        addCommit(command.changeId);
-        addCommit(command.entryCommitId);
+        addCommit(command.changeId, command.changeStableId ?? null);
+        addCommit(command.entryCommitId, command.entryChangeStableId ?? null);
         return;
       case 'create-new-change':
         addCommitFromTarget(command.parent, addCommit);
@@ -146,32 +163,32 @@ function deriveOperationContext(kind: UiOperationKind, commitGraph: CommitGraph 
       case 'update-change-description':
       case 'checkout-change':
       case 'abandon-change':
-        addCommit(command.commitId);
+        addCommit(command.commitId, command.changeStableId ?? null);
         return;
       case 'move-bookmark':
       case 'add-bookmark':
-        addCommit(command.targetCommitId);
+        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
         return;
       case 'delete-bookmark':
         return;
       case 'hunk-split':
-        addCommit(command.sourceCommitId);
+        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
         addCommitFromTarget(command.target, addCommit);
         return;
       case 'move-files':
-        addCommit(command.sourceCommitId);
-        addCommit(command.targetCommitId);
+        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
+        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
         return;
       case 'rebase':
-        addCommit(command.commitId);
+        addCommit(command.commitId, command.changeStableId ?? null);
         addCommitFromTarget(command.target, addCommit);
         return;
       case 'squash':
-        addCommit(command.sourceCommitId);
-        addCommit(command.targetCommitId);
+        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
+        addCommit(command.targetCommitId, command.targetChangeStableId ?? null);
         return;
       case 'split':
-        addCommit(command.sourceCommitId);
+        addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
         addCommitFromTarget(command.target, addCommit);
         return;
       default:
@@ -358,7 +375,7 @@ export const useGraphStore = create<GraphState>()(
         const entry = get().uiOperationLog.find(item => item.id === operationId);
         const currentCommitGraph = get().commitGraph;
         const context = entry
-          ? deriveOperationContext(entry.kind, currentCommitGraph)
+          ? deriveOperationContext(entry.kind, currentCommitGraph, entry.relatedCommitAssociations)
           : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
 
         set({ operationLog: opLogAfter });
@@ -537,7 +554,7 @@ export const useGraphStore = create<GraphState>()(
           const message = error instanceof Error ? error.message : String(error);
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
-            ? deriveOperationContext(failureEntry.kind, get().commitGraph)
+            ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
             : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
@@ -553,57 +570,81 @@ export const useGraphStore = create<GraphState>()(
 
       // Intention-based UI actions
       moveFileToChange: async (file, sourceChangeId, targetChangeId) => {
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'move-file-to-change',
           file,
           sourceChangeId,
           targetChangeId,
+          sourceChangeStableId: sourceStable,
+          targetChangeStableId: targetStable,
         };
         await get().executeCommand(command);
       },
 
       splitFileFromChange: async (file, sourceChangeId, target) => {
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'split-file-from-change',
           file,
           sourceChangeId,
           target,
+          sourceChangeStableId: sourceStable,
         };
         await get().executeCommand(command);
       },
 
       rebaseChange: async (changeId, newParent) => {
+        const commitGraph = get().commitGraph;
+        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'rebase-change',
           changeId,
           newParent,
+          changeStableId: stableId,
         };
         await get().executeCommand(command);
       },
 
       reorderChange: async (changeId, newPosition) => {
+        const commitGraph = get().commitGraph;
+        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'reorder-change',
           changeId,
           newPosition,
+          changeStableId: stableId,
         };
         await get().executeCommand(command);
       },
 
       squashChangeInto: async (sourceChangeId, targetChangeId) => {
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetChangeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'squash-change-into',
           sourceChangeId,
           targetChangeId,
+          sourceChangeStableId: sourceStable,
+          targetChangeStableId: targetStable,
         };
         await get().executeCommand(command);
       },
 
       splitAtEvoLog: async (changeId, entryCommitId) => {
+        const commitGraph = get().commitGraph;
+        const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
+        const entryStable = commitGraph?.[entryCommitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'split-at-evolog',
           changeId,
           entryCommitId,
+          changeStableId: stableId,
+          entryChangeStableId: entryStable,
         };
         await get().executeCommand(command);
       },
@@ -618,35 +659,47 @@ export const useGraphStore = create<GraphState>()(
       },
 
       updateChangeDescription: async (commitId, description) => {
+        const commitGraph = get().commitGraph;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'update-change-description',
           commitId,
           description,
+          changeStableId,
         };
         await get().executeCommand(command);
       },
 
       abandonChange: async (commitId) => {
+        const commitGraph = get().commitGraph;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'abandon-change',
           commitId,
+          changeStableId,
         };
         await get().executeCommand(command);
       },
 
       checkoutChange: async (commitId) => {
+        const commitGraph = get().commitGraph;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'checkout-change',
           commitId,
+          changeStableId,
         };
         await get().executeCommand(command);
       },
 
       moveBookmark: async (bookmarkName, targetCommitId) => {
+        const commitGraph = get().commitGraph;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'move-bookmark',
           bookmarkName,
           targetCommitId,
+          targetChangeStableId: targetStable,
         };
         await get().executeCommand(command);
       },
@@ -660,21 +713,27 @@ export const useGraphStore = create<GraphState>()(
       },
 
       addBookmark: async (bookmarkName, targetCommitId) => {
+        const commitGraph = get().commitGraph;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'add-bookmark',
           bookmarkName,
           targetCommitId,
+          targetChangeStableId: targetStable,
         };
         await get().executeCommand(command);
       },
 
       executeHunkSplit: async (sourceCommitId, hunkRanges, target, description) => {
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'hunk-split',
           sourceCommitId,
           hunkRanges,
           target,
           description,
+          sourceChangeStableId: sourceStable,
         };
         await get().executeCommand(command);
       },
@@ -685,8 +744,10 @@ export const useGraphStore = create<GraphState>()(
           console.error('Cannot execute rebase: no repository path set');
           return;
         }
+        const commitGraph = get().commitGraph;
+        const changeStableId = commitGraph?.[commitId]?.commit.changeId as ChangeId | undefined;
 
-        const command: GitCommand = { type: 'rebase', commitId, target };
+        const command: GitCommand = { type: 'rebase', commitId, target, changeStableId };
         console.log('🔄 REBASE COMMAND:', command);
         const operationId = get().logUiOperation({
           description: describeLegacyGitCommand(command),
@@ -704,7 +765,7 @@ export const useGraphStore = create<GraphState>()(
           const message = error instanceof Error ? error.message : String(error);
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
-            ? deriveOperationContext(failureEntry.kind, get().commitGraph)
+            ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
             : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
@@ -724,8 +785,11 @@ export const useGraphStore = create<GraphState>()(
           console.error('Cannot execute squash: no repository path set');
           return;
         }
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
 
-        const command: GitCommand = { type: 'squash', sourceCommitId, targetCommitId };
+        const command: GitCommand = { type: 'squash', sourceCommitId, targetCommitId, sourceChangeStableId: sourceStable, targetChangeStableId: targetStable };
         console.log('🔧 SQUASH COMMAND:', command);
         const operationId = get().logUiOperation({
           description: describeLegacyGitCommand(command),
@@ -743,7 +807,7 @@ export const useGraphStore = create<GraphState>()(
           const message = error instanceof Error ? error.message : String(error);
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
-            ? deriveOperationContext(failureEntry.kind, get().commitGraph)
+            ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
             : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
@@ -763,8 +827,10 @@ export const useGraphStore = create<GraphState>()(
           console.error('Cannot execute split: no repository path set');
           return;
         }
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
 
-        const command: GitCommand = { type: 'split', sourceCommitId, files, target };
+        const command: GitCommand = { type: 'split', sourceCommitId, files, target, sourceChangeStableId: sourceStable };
         console.log('✂️ SPLIT COMMAND:', command);
         const operationId = get().logUiOperation({
           description: describeLegacyGitCommand(command),
@@ -782,7 +848,7 @@ export const useGraphStore = create<GraphState>()(
           const message = error instanceof Error ? error.message : String(error);
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
-            ? deriveOperationContext(failureEntry.kind, get().commitGraph)
+            ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
             : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,
@@ -802,8 +868,11 @@ export const useGraphStore = create<GraphState>()(
           console.error('Cannot execute move files: no repository path set');
           return;
         }
+        const commitGraph = get().commitGraph;
+        const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
+        const targetStable = commitGraph?.[targetCommitId]?.commit.changeId as ChangeId | undefined;
 
-        const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files };
+        const command: GitCommand = { type: 'move-files', sourceCommitId, targetCommitId, files, sourceChangeStableId: sourceStable, targetChangeStableId: targetStable };
         console.log('📁 MOVE FILES COMMAND:', command);
         const operationId = get().logUiOperation({
           description: describeLegacyGitCommand(command),
@@ -821,7 +890,7 @@ export const useGraphStore = create<GraphState>()(
           const message = error instanceof Error ? error.message : String(error);
           const failureEntry = get().uiOperationLog.find(item => item.id === operationId);
           const failureContext = failureEntry
-            ? deriveOperationContext(failureEntry.kind, get().commitGraph)
+            ? deriveOperationContext(failureEntry.kind, get().commitGraph, failureEntry.relatedCommitAssociations)
             : { relatedCommitIds: [] as CommitId[], relatedChangeIds: [] as ChangeId[], relatedCommitAssociations: [] as { commitId: CommitId; changeId?: ChangeId }[] };
           get().updateUiOperationStatus(operationId, 'failed', {
             errorMessage: message,

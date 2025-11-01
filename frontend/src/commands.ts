@@ -1,4 +1,4 @@
-import type { CommitId, FileChange, CommandTarget, BookmarkName } from "../../backend/src/repo-parser";
+import type { CommitId, ChangeId, FileChange, CommandTarget, BookmarkName } from "../../backend/src/repo-parser";
 
 // Re-export CommandTarget for convenience
 export type { CommandTarget };
@@ -11,6 +11,8 @@ export interface MoveFileToChangeCommand {
   file: FileChange;
   sourceChangeId: CommitId;
   targetChangeId: CommitId;
+  sourceChangeStableId?: ChangeId;
+  targetChangeStableId?: ChangeId;
 }
 
 export interface SplitFileFromChangeCommand {
@@ -18,12 +20,14 @@ export interface SplitFileFromChangeCommand {
   file: FileChange;
   sourceChangeId: CommitId;
   target: CommandTarget; // Where to put the new change
+  sourceChangeStableId?: ChangeId;
 }
 
 // Change manipulation intentions
 export interface RebaseChangeCommand {
   type: 'rebase-change';
   changeId: CommitId;
+  changeStableId?: ChangeId;
   newParent: CommandTarget;
 }
 
@@ -31,12 +35,15 @@ export interface ReorderChangeCommand {
   type: 'reorder-change';
   changeId: CommitId;
   newPosition: CommandTarget;
+  changeStableId?: ChangeId;
 }
 
 export interface SquashChangeIntoCommand {
   type: 'squash-change-into';
   sourceChangeId: CommitId;
   targetChangeId: CommitId;
+  sourceChangeStableId?: ChangeId;
+  targetChangeStableId?: ChangeId;
 }
 
 // Evolog-based intentions
@@ -44,6 +51,8 @@ export interface SplitAtEvoLogCommand {
   type: 'split-at-evolog';
   changeId: CommitId;
   entryCommitId: CommitId; // Commit snapshot from the evolog to resurrect
+  changeStableId?: ChangeId;
+  entryChangeStableId?: ChangeId;
 }
 
 // Create new change intentions
@@ -57,16 +66,19 @@ export interface UpdateChangeDescriptionCommand {
   type: 'update-change-description';
   commitId: CommitId;
   description: string;
+  changeStableId?: ChangeId;
 }
 
 export interface AbandonChangeCommand {
   type: 'abandon-change';
   commitId: CommitId;
+  changeStableId?: ChangeId;
 }
 
 export interface CheckoutChangeCommand {
   type: 'checkout-change';
   commitId: CommitId;
+  changeStableId?: ChangeId;
 }
 
 // Bookmark manipulation intentions
@@ -74,6 +86,7 @@ export interface MoveBookmarkCommand {
   type: 'move-bookmark';
   bookmarkName: BookmarkName;
   targetCommitId: CommitId;
+  targetChangeStableId?: ChangeId;
 }
 
 export interface DeleteBookmarkCommand {
@@ -85,6 +98,7 @@ export interface AddBookmarkCommand {
   type: 'add-bookmark';
   bookmarkName: BookmarkName;
   targetCommitId: CommitId;
+  targetChangeStableId?: ChangeId;
 }
 
 export interface HunkRange {
@@ -99,6 +113,7 @@ export interface HunkSplitCommand {
   hunkRanges: HunkRange[];
   target: CommandTarget;
   description?: string;
+  sourceChangeStableId?: ChangeId;
 }
 
 export type IntentionCommand =
@@ -122,12 +137,15 @@ export interface RebaseCommand {
   type: 'rebase';
   commitId: CommitId;
   target: CommandTarget;
+  changeStableId?: ChangeId;
 }
 
 export interface SquashCommand {
   type: 'squash';
   sourceCommitId: CommitId;
   targetCommitId: CommitId;
+  sourceChangeStableId?: ChangeId;
+  targetChangeStableId?: ChangeId;
 }
 
 export interface SplitCommand {
@@ -135,6 +153,7 @@ export interface SplitCommand {
   sourceCommitId: CommitId;
   files: FileChange[];
   target: CommandTarget;
+  sourceChangeStableId?: ChangeId;
 }
 
 export interface MoveFilesCommand {
@@ -142,6 +161,8 @@ export interface MoveFilesCommand {
   sourceCommitId: CommitId;
   targetCommitId: CommitId;
   files: FileChange[];
+  sourceChangeStableId?: ChangeId;
+  targetChangeStableId?: ChangeId;
 }
 
 export type LegacyCommand = RebaseCommand | SquashCommand | SplitCommand | MoveFilesCommand;

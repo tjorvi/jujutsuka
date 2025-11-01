@@ -130,6 +130,7 @@ export const appRouter = router({
         z.object({
           type: z.literal('rebase-change'),
           changeId: z.string(),
+          changeStableId: z.string().optional(),
           newParent: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
@@ -146,6 +147,7 @@ export const appRouter = router({
         z.object({
           type: z.literal('reorder-change'),
           changeId: z.string(),
+          changeStableId: z.string().optional(),
           newPosition: z.union([
             z.object({ type: z.literal('before'), commitId: z.string() }),
             z.object({ type: z.literal('after'), commitId: z.string() }),
@@ -162,12 +164,16 @@ export const appRouter = router({
         z.object({
           type: z.literal('squash-change-into'),
           sourceChangeId: z.string(),
-          targetChangeId: z.string()
+          targetChangeId: z.string(),
+          sourceChangeStableId: z.string().optional(),
+          targetChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('split-at-evolog'),
           changeId: z.string(),
-          entryCommitId: z.string()
+          entryCommitId: z.string(),
+          changeStableId: z.string().optional(),
+          entryChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('create-new-change'),
@@ -190,21 +196,25 @@ export const appRouter = router({
         }),
         z.object({
           type: z.literal('abandon-change'),
-          commitId: z.string()
+          commitId: z.string(),
+          changeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('update-change-description'),
           commitId: z.string(),
-          description: z.string()
+          description: z.string(),
+          changeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('checkout-change'),
-          commitId: z.string()
+          commitId: z.string(),
+          changeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('move-bookmark'),
           bookmarkName: z.string(),
-          targetCommitId: z.string()
+          targetCommitId: z.string(),
+          targetChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('delete-bookmark'),
@@ -213,7 +223,8 @@ export const appRouter = router({
         z.object({
           type: z.literal('add-bookmark'),
           bookmarkName: z.string(),
-          targetCommitId: z.string()
+          targetCommitId: z.string(),
+          targetChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('hunk-split'),
@@ -235,7 +246,8 @@ export const appRouter = router({
             }),
             z.object({ type: z.literal('existing-commit'), commitId: z.string() })
           ]),
-          description: z.string().optional()
+          description: z.string().optional(),
+          sourceChangeStableId: z.string().optional()
         }),
 
         // Legacy commands (for backwards compatibility)
@@ -253,12 +265,15 @@ export const appRouter = router({
               afterCommitId: z.string() 
             }),
             z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          ]),
+          changeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('squash'),
           sourceCommitId: z.string(),
-          targetCommitId: z.string()
+          targetCommitId: z.string(),
+          sourceChangeStableId: z.string().optional(),
+          targetChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('split'),
@@ -278,7 +293,8 @@ export const appRouter = router({
               afterCommitId: z.string() 
             }),
             z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          ]),
+          sourceChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('move-files'),
@@ -287,7 +303,9 @@ export const appRouter = router({
           files: z.array(z.object({
             path: z.string(),
             status: z.string()
-          }))
+          })),
+          sourceChangeStableId: z.string().optional(),
+          targetChangeStableId: z.string().optional()
         })
       ])
     }))
