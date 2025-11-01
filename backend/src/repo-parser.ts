@@ -682,9 +682,9 @@ export async function executeHunkSplit(
     } else if (position.kind === 'after') {
       newArgs.push('--insert-after', position.commit);
     } else if (position.kind === 'between-commits') {
-      newArgs.push('--insert-after', position.beforeCommit);
+      newArgs.push('--insert-after', position.afterCommit);
       if (position.afterCommit !== sourceCommitId) {
-        newArgs.push('--insert-before', position.afterCommit);
+        newArgs.push('--insert-before', position.beforeCommit);
       }
     } else if (position.kind === 'new-branch') {
       newArgs.push('--destination', position.commit);
