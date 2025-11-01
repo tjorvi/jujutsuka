@@ -26,49 +26,34 @@ import {
   type Position
 } from './repo-parser.ts';
 import { z } from 'zod';
-import { match } from 'ts-pattern';
 
 const fileStatusSchema = z.enum(['M', 'A', 'D', 'R', 'C']);
+
+const commitIdSchema = z.string().transform((val) => createCommitId(val));
 
 const positionSchema = z.union([
   z.object({
     kind: z.literal('before'),
-    commit: z.string(),
+    commit: commitIdSchema,
   }),
   z.object({
     kind: z.literal('after'),
-    commit: z.string(),
+    commit: commitIdSchema,
   }),
   z.object({
     kind: z.literal('between-commits'),
-    beforeCommit: z.string(),
-    afterCommit: z.string(),
+    beforeCommit: commitIdSchema,
+    afterCommit: commitIdSchema,
   }),
   z.object({
     kind: z.literal('new-branch'),
-    commit: z.string(),
+    commit: commitIdSchema,
   }),
   z.object({
     kind: z.literal('existing-commit'),
-    commit: z.string(),
+    commit: commitIdSchema,
   }),
 ]);
-
-type PositionInput = z.infer<typeof positionSchema>;
-
-function validatePosition(position: PositionInput): Position {
-  return match(position)
-    .with({ kind: 'before' }, (p) => ({ kind: 'before' as const, commit: createCommitId(p.commit) }))
-    .with({ kind: 'after' }, (p) => ({ kind: 'after' as const, commit: createCommitId(p.commit) }))
-    .with({ kind: 'between-commits' }, (p) => ({
-      kind: 'between-commits' as const,
-      beforeCommit: createCommitId(p.beforeCommit),
-      afterCommit: createCommitId(p.afterCommit),
-    }))
-    .with({ kind: 'new-branch' }, (p) => ({ kind: 'new-branch' as const, commit: createCommitId(p.commit) }))
-    .with({ kind: 'existing-commit' }, (p) => ({ kind: 'existing-commit' as const, commit: createCommitId(p.commit) }))
-    .exhaustive();
-}
 
 // Helper to convert legacy CommandTarget format to Position
 function convertLegacyTarget(target: any): Position {
@@ -340,19 +325,19 @@ export const appRouter = router({
         } else if (command.type === 'split-file-from-change') {
           // Split file to new commit at position
           const sourceCommitId = createCommitId(command.sourceChangeId);
-          const position = validatePosition(command.position);
+          const position = command.position;
           await executeSplit(repoPath, sourceCommitId, [command.file], position);
 
         } else if (command.type === 'rebase-change') {
           // Rebase change to position
           const changeId = createCommitId(command.changeId);
-          const position = validatePosition(command.position);
+          const position = command.position;
           await executeRebase(repoPath, changeId, position);
 
         } else if (command.type === 'reorder-change') {
           // Reorder change to new position
           const changeId = createCommitId(command.changeId);
-          const position = validatePosition(command.position);
+          const position = command.position;
           await executeRebase(repoPath, changeId, position);
 
         } else if (command.type === 'squash-change-into') {
@@ -379,7 +364,7 @@ export const appRouter = router({
 
         } else if (command.type === 'create-new-change') {
           // Create a new empty commit at position
-          const position = validatePosition(command.position);
+          const position = command.position;
 
           if (command.files.length > 0) {
             throw new Error('Creating a new change with predefined files is not yet supported');
@@ -408,7 +393,7 @@ export const appRouter = router({
         } else if (command.type === 'hunk-split') {
           // Split hunks to new commit at position
           const sourceCommitId = createCommitId(command.sourceCommitId);
-          const position = validatePosition(command.position);
+          const position = command.position;
           await executeHunkSplit(repoPath, sourceCommitId, command.hunkRanges, position, command.description);
 
         } else if (command.type === 'rebase') {
