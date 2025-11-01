@@ -1,4 +1,22 @@
 import { useState, useMemo, useCallback } from 'react';
+import type { CommitId } from '../../backend/src/repo-parser';
+import { dragHunk } from './useDragDrop';
+
+/**
+ * Parse a hunk header to extract line ranges
+ * Header format: @@ -oldStart,oldCount +newStart,newCount @@
+ * Returns the new file's line range (startLine, endLine) as 1-indexed, inclusive
+ */
+function parseHunkHeader(header: string): { startLine: number; endLine: number } | null {
+  const match = header.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+  if (!match) return null;
+
+  const startLine = parseInt(match[1], 10);
+  const lineCount = match[2] ? parseInt(match[2], 10) : 1;
+  const endLine = startLine + lineCount - 1;
+
+  return { startLine, endLine };
+}
 
 interface DiffLineStyle {
   readonly color: string;
@@ -76,6 +94,8 @@ interface DiffHunkProps {
   readonly lines: readonly string[];
   readonly defaultExpanded?: boolean;
   readonly onExplain?: (input: { readonly header: string; readonly lines: readonly string[] }) => Promise<string>;
+  readonly filePath?: string;
+  readonly commitId?: CommitId;
 }
 
 type ExplanationState =
@@ -86,9 +106,10 @@ type ExplanationState =
 
 const idleExplanation: ExplanationState = { status: 'idle' };
 
-export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: DiffHunkProps) {
+export function DiffHunk({ header, lines, defaultExpanded = true, onExplain, filePath, commitId }: DiffHunkProps) {
   const [isOpen, setIsOpen] = useState(defaultExpanded);
   const [explanation, setExplanation] = useState<ExplanationState>(idleExplanation);
+  const [isDragging, setIsDragging] = useState(false);
 
   const renderedLines = useMemo(
     () => lines.map((line, index) => (
@@ -98,6 +119,8 @@ export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: D
   );
 
   const isExplaining = explanation.status === 'loading';
+  const isDraggable = Boolean(filePath && commitId);
+  const hunkRange = useMemo(() => parseHunkHeader(header), [header]);
 
   const handleExplain = useCallback(async () => {
     if (!onExplain || isExplaining) {
@@ -118,6 +141,26 @@ export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: D
     }
   }, [onExplain, isExplaining, header, lines]);
 
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    if (!isDraggable || !filePath || !commitId || !hunkRange) {
+      e.preventDefault();
+      return;
+    }
+
+    setIsDragging(true);
+    dragHunk(e, {
+      source: 'hunk',
+      filePath,
+      startLine: hunkRange.startLine,
+      endLine: hunkRange.endLine,
+      fromCommitId: commitId,
+    });
+  }, [isDraggable, filePath, commitId, hunkRange]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
   return (
     <div
       style={{
@@ -128,6 +171,9 @@ export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: D
       }}
     >
       <div
+        draggable={isDraggable}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -136,6 +182,9 @@ export function DiffHunk({ header, lines, defaultExpanded = true, onExplain }: D
           background: '#2d3748',
           color: '#e5e7eb',
           borderBottom: isOpen && lines.length > 0 ? '1px solid #3e3e3e' : 'none',
+          cursor: isDraggable ? 'grab' : 'default',
+          opacity: isDragging ? 0.5 : 1,
+          userSelect: 'none',
         }}
       >
         <button

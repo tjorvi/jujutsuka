@@ -70,6 +70,8 @@ function getStatusColor(status: string) {
 interface DiffContentOptions {
   readonly attachToHeader?: boolean;
   readonly onExplain?: (input: { readonly header: string; readonly lines: readonly string[] }) => Promise<string>;
+  readonly filePath?: string;
+  readonly commitId?: CommitId;
 }
 
 function renderDiffContent(diff: string, options?: DiffContentOptions) {
@@ -98,6 +100,8 @@ function renderDiffContent(diff: string, options?: DiffContentOptions) {
           lines={hunk.lines}
           defaultExpanded={index === 0}
           onExplain={options?.onExplain}
+          filePath={options?.filePath}
+          commitId={options?.commitId}
         />
       ))}
       {metadata.length === 0 && hunks.length === 0 && (
@@ -366,6 +370,8 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = 
                   renderDiffContent(fileDiff.diff, {
                     attachToHeader: true,
                     onExplain: explainHunk(fileDiff.path),
+                    filePath: fileDiff.path,
+                    commitId,
                   })
                 )}
               </div>
@@ -426,6 +432,8 @@ export function DiffPanel({ commitId, selectedFilePath, isPreview, dataSource = 
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {renderDiffContent(String(fileDiff.data), {
             onExplain: selectedFilePath ? explainHunk(selectedFilePath) : undefined,
+            filePath: selectedFilePath,
+            commitId,
           })}
         </div>
       )}

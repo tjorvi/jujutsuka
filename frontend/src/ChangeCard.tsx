@@ -3,6 +3,7 @@ import type { BookmarkName, ChangeId, Commit, CommitId } from '../../backend/src
 import {
   draggedFileChange,
   draggedChange,
+  draggedHunk,
   useDragDrop,
   draggedBookmark,
   dragBookmark,
@@ -90,7 +91,7 @@ export function ChangeCard({
   bookmarks,
   onCommitSelect,
 }: ChangeCardProps) {
-  const { handleFileDrop, handleCommitDrop, handleBookmarkDrop } = useDragDrop();
+  const { handleFileDrop, handleCommitDrop, handleBookmarkDrop, handleHunkDrop } = useDragDrop();
 
   const [isHovered, setIsHovered] = useState(false);
   const [isBeingDragged, setIsBeingDragged] = useState(false);
@@ -131,9 +132,15 @@ export function ChangeCard({
     const fileChange = draggedFileChange(event);
     const change = draggedChange(event);
     const bookmark = draggedBookmark(event);
+    const hunk = draggedHunk(event);
 
     if (fileChange) {
       handleFileDrop({ kind: 'existing', commit: commitId }, fileChange);
+      return;
+    }
+
+    if (hunk) {
+      handleHunkDrop({ kind: 'existing', commit: commitId }, hunk);
       return;
     }
 

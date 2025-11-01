@@ -28,12 +28,22 @@ const bookmarkDragDataSchema = z.object({
 });
 export type BookmarkDragData = z.infer<typeof bookmarkDragDataSchema>;
 
+const hunkDragDataSchema = z.object({
+  source: z.literal('hunk'),
+  filePath: z.string(),
+  startLine: z.number(),
+  endLine: z.number(),
+  fromCommitId: z.string().transform((val) => val as CommitId),
+});
+export type HunkDragData = z.infer<typeof hunkDragDataSchema>;
+
 type DragEventLike = { dataTransfer: DataTransfer };
 
 type ActiveDragMeta =
   | { kind: 'change'; commitId: CommitId; changeId: ChangeId }
   | { kind: 'file-change'; fromCommitId: CommitId; fromChangeId: ChangeId }
-  | { kind: 'bookmark'; bookmarkName: BookmarkName };
+  | { kind: 'bookmark'; bookmarkName: BookmarkName }
+  | { kind: 'hunk'; fromCommitId: CommitId; filePath: string };
 
 let currentActiveDragMeta: ActiveDragMeta | null = null;
 
@@ -103,6 +113,27 @@ export function draggedBookmark(e: DragEventLike): BookmarkDragData | null {
   }
 }
 
+export function dragHunk(e: React.DragEvent, data: HunkDragData) {
+  e.dataTransfer.setData('application/json', JSON.stringify(data));
+  e.dataTransfer.effectAllowed = 'move';
+  setActiveDragMeta({
+    kind: 'hunk',
+    fromCommitId: data.fromCommitId,
+    filePath: data.filePath,
+  });
+}
+
+export function draggedHunk(e: DragEventLike): HunkDragData | null {
+  const data = e.dataTransfer.getData('application/json');
+  if (!data) return null;
+  try {
+    const parsed = JSON.parse(data);
+    return hunkDragDataSchema.parse(parsed);
+  } catch {
+    return null;
+  }
+}
+
 
 
 export type DropZonePosition = {
@@ -123,6 +154,7 @@ interface DragDropContextType {
   handleFileDrop: (position: DropZonePosition, dragData: FileChangeDragData) => void;
   handleCommitDrop: (position: DropZonePosition, dragData: ChangeDragData, options?: { mode?: CommitDropMode }) => void;
   handleBookmarkDrop: (position: DropZonePosition, dragData: BookmarkDragData) => void;
+  handleHunkDrop: (position: DropZonePosition, dragData: HunkDragData) => void;
 }
 
 export const DragDropContext = createContext<DragDropContextType | null>(null);

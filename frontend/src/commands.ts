@@ -87,7 +87,21 @@ export interface AddBookmarkCommand {
   targetCommitId: CommitId;
 }
 
-export type IntentionCommand = 
+export interface HunkRange {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+}
+
+export interface HunkSplitCommand {
+  type: 'hunk-split';
+  sourceCommitId: CommitId;
+  hunkRanges: HunkRange[];
+  target: CommandTarget;
+  description?: string;
+}
+
+export type IntentionCommand =
   | MoveFileToChangeCommand
   | SplitFileFromChangeCommand
   | RebaseChangeCommand
@@ -100,7 +114,8 @@ export type IntentionCommand =
   | CheckoutChangeCommand
   | MoveBookmarkCommand
   | DeleteBookmarkCommand
-  | AddBookmarkCommand;
+  | AddBookmarkCommand
+  | HunkSplitCommand;
 
 // Legacy low-level commands (for backwards compatibility during transition)
 export interface RebaseCommand {

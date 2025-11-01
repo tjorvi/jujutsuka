@@ -1,9 +1,9 @@
 import type { CommitId } from "../../backend/src/repo-parser";
-import { DragDropContext, type FileChangeDragData, type ChangeDragData, type DropZonePosition, type BookmarkDragData } from './useDragDrop';
+import { DragDropContext, type FileChangeDragData, type ChangeDragData, type DropZonePosition, type BookmarkDragData, type HunkDragData } from './useDragDrop';
 import { useGraphStore } from './graphStore';
 
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
-  const { executeRebase, executeSquash, executeSplit, executeMoveFiles, moveBookmark } = useGraphStore();
+  const { executeRebase, executeSquash, executeSplit, executeMoveFiles, moveBookmark, executeHunkSplit } = useGraphStore();
   const commitGraph = useGraphStore(state => state.commitGraph);
 
   const isAncestor = (possibleAncestor: CommitId, commitId: CommitId): boolean => {
@@ -143,11 +143,51 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     void moveBookmark(dragData.bookmarkName, position.commit);
   };
 
+  const handleHunkDrop = (position: DropZonePosition, dragData: HunkDragData) => {
+    const { filePath, startLine, endLine, fromCommitId } = dragData;
+    const hunkRanges = [{ filePath, startLine, endLine }];
+
+    if (position.kind === 'existing') {
+      // For existing commits, we'll need evosquash which isn't implemented yet
+      // But we'll still implement the handler for consistency
+      console.warn('Dropping hunks onto existing commits requires evosquash, which is not yet implemented');
+      // When evosquash is available, we would do:
+      // executeHunkSplit(fromCommitId, hunkRanges, { type: 'existing-commit', commitId: position.commit });
+      return;
+    } else if (position.kind === 'new-branch') {
+      // Split to new branch
+      executeHunkSplit(fromCommitId, hunkRanges, {
+        type: 'new-branch',
+        fromCommitId: position.commit
+      });
+    } else if (position.kind === 'between') {
+      // Split to new commit between two commits
+      executeHunkSplit(fromCommitId, hunkRanges, {
+        type: 'new-commit-between',
+        beforeCommitId: position.beforeCommit,
+        afterCommitId: position.afterCommit
+      });
+    } else if (position.kind === 'before') {
+      // Split to new commit before target
+      executeHunkSplit(fromCommitId, hunkRanges, {
+        type: 'before',
+        commitId: position.commit
+      });
+    } else if (position.kind === 'after') {
+      // Split to new commit after target
+      executeHunkSplit(fromCommitId, hunkRanges, {
+        type: 'after',
+        commitId: position.commit
+      });
+    }
+  };
+
   return (
     <DragDropContext.Provider value={{
       handleFileDrop,
       handleCommitDrop,
       handleBookmarkDrop,
+      handleHunkDrop,
     }}>
       {children}
     </DragDropContext.Provider>

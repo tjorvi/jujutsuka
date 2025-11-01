@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName } from "../../backend/src/repo-parser";
-import type { GitCommand, CommandTarget, IntentionCommand } from './commands';
+import type { GitCommand, CommandTarget, IntentionCommand, HunkRange } from './commands';
 import { mutations } from './api';
 
 type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
@@ -39,6 +39,7 @@ interface GraphState {
   moveBookmark: (bookmarkName: BookmarkName, targetCommitId: CommitId) => Promise<void>;
   deleteBookmark: (bookmarkName: BookmarkName) => Promise<void>;
   addBookmark: (bookmarkName: BookmarkName, targetCommitId: CommitId) => Promise<void>;
+  executeHunkSplit: (sourceCommitId: CommitId, hunkRanges: HunkRange[], target: CommandTarget, description?: string) => Promise<void>;
 
   // Legacy actions (for backwards compatibility)
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
@@ -239,6 +240,17 @@ export const useGraphStore = create<GraphState>()(
           type: 'add-bookmark',
           bookmarkName,
           targetCommitId,
+        };
+        await get().executeCommand(command);
+      },
+
+      executeHunkSplit: async (sourceCommitId, hunkRanges, target, description) => {
+        const command: IntentionCommand = {
+          type: 'hunk-split',
+          sourceCommitId,
+          hunkRanges,
+          target,
+          description,
         };
         await get().executeCommand(command);
       },

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeId, CommitId, Commit } from '../../backend/src/repo-parser';
 import type { Stack } from './stackUtils';
-import { draggedFileChange, draggedChange, useDragDrop, type DropZonePosition } from './useDragDrop';
+import { draggedFileChange, draggedChange, draggedHunk, useDragDrop, type DropZonePosition } from './useDragDrop';
 import { queries } from './api';
 import { useGraphStore } from './graphStore';
 import styles from './StackGraph.module.css';
@@ -43,7 +43,7 @@ function commandTargetFromPosition(position: DropZonePosition): CommandTarget | 
 }
 
 function DropZone({ position, children }: DropZoneProps) {
-  const { handleFileDrop, handleCommitDrop } = useDragDrop();
+  const { handleFileDrop, handleCommitDrop, handleHunkDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
   const createNewChange = useGraphStore(state => state.createNewChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
@@ -70,9 +70,15 @@ function DropZone({ position, children }: DropZoneProps) {
 
     const fileChange = draggedFileChange(event);
     const change = draggedChange(event);
+    const hunk = draggedHunk(event);
 
     if (fileChange) {
       handleFileDrop(position, fileChange);
+      return;
+    }
+
+    if (hunk) {
+      handleHunkDrop(position, hunk);
       return;
     }
 

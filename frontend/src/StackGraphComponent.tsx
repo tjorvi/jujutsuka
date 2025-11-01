@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeId, CommitId, Commit, BookmarkName } from '../../backend/src/repo-parser';
 import type { LayoutStackGraph, ParallelGroup, StackId } from './stackUtils';
-import { draggedChange, draggedFileChange, draggedBookmark, getActiveDragMeta, clearActiveDragMeta } from './useDragDrop';
+import { draggedChange, draggedFileChange, draggedBookmark, draggedHunk, getActiveDragMeta, clearActiveDragMeta } from './useDragDrop';
 import { StackComponent } from './StackComponent';
 
 type DragMeta =
   | { kind: 'change'; commitId: CommitId; changeId: ChangeId }
   | { kind: 'file-change'; fromCommitId: CommitId; fromChangeId: ChangeId }
   | { kind: 'bookmark'; bookmarkName: BookmarkName }
+  | { kind: 'hunk'; fromCommitId: CommitId; filePath: string }
   | { kind: 'external-file' }
   | { kind: 'external-text' }
   | { kind: 'unknown' };
@@ -29,10 +30,19 @@ function extractDragMeta(dataTransfer: DataTransfer | null): DragMeta {
         fromChangeId: activeMeta.fromChangeId,
       };
     }
-    return {
-      kind: 'bookmark',
-      bookmarkName: activeMeta.bookmarkName,
-    };
+    if (activeMeta.kind === 'bookmark') {
+      return {
+        kind: 'bookmark',
+        bookmarkName: activeMeta.bookmarkName,
+      };
+    }
+    if (activeMeta.kind === 'hunk') {
+      return {
+        kind: 'hunk',
+        fromCommitId: activeMeta.fromCommitId,
+        filePath: activeMeta.filePath,
+      };
+    }
   }
 
   if (!dataTransfer) {
@@ -56,6 +66,11 @@ function extractDragMeta(dataTransfer: DataTransfer | null): DragMeta {
   const bookmark = draggedBookmark({ dataTransfer });
   if (bookmark) {
     return { kind: 'bookmark', bookmarkName: bookmark.bookmarkName };
+  }
+
+  const hunk = draggedHunk({ dataTransfer });
+  if (hunk) {
+    return { kind: 'hunk', fromCommitId: hunk.fromCommitId, filePath: hunk.filePath };
   }
 
   const dataTransferTypes = Array.from(dataTransfer.types);
@@ -96,6 +111,15 @@ function applyRootDragAttributes(element: HTMLDivElement, meta: DragMeta) {
       delete element.dataset.dragChangeId;
       delete element.dataset.dragFromCommitId;
       delete element.dataset.dragFromChangeId;
+      delete element.dataset.dragFilePath;
+      break;
+    case 'hunk':
+      element.dataset.dragFromCommitId = meta.fromCommitId;
+      element.dataset.dragFilePath = meta.filePath;
+      delete element.dataset.dragCommitId;
+      delete element.dataset.dragChangeId;
+      delete element.dataset.dragFromChangeId;
+      delete element.dataset.dragBookmarkName;
       break;
     default:
       delete element.dataset.dragCommitId;
@@ -103,6 +127,7 @@ function applyRootDragAttributes(element: HTMLDivElement, meta: DragMeta) {
       delete element.dataset.dragFromCommitId;
       delete element.dataset.dragFromChangeId;
       delete element.dataset.dragBookmarkName;
+      delete element.dataset.dragFilePath;
       break;
   }
 }
@@ -115,6 +140,7 @@ function clearRootDragAttributes(element: HTMLDivElement) {
   delete element.dataset.dragFromCommitId;
   delete element.dataset.dragFromChangeId;
   delete element.dataset.dragBookmarkName;
+  delete element.dataset.dragFilePath;
 }
 
 interface RootDragState {

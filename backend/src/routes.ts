@@ -22,8 +22,7 @@ import {
   executeMoveBookmark,
   executeDeleteBookmark,
   executeCreateBookmark,
-  executeHunkSplit,
-  parseHunkRange
+  executeHunkSplit
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
