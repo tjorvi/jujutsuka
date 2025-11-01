@@ -9,6 +9,7 @@ import { LatestUiOperationPanel } from './LatestUiOperationPanel';
 import { CommitChangeToken } from './IdBadges';
 import type { CommitId, OpLogEntry, ChangeId } from "../../backend/src/repo-parser";
 import type { CommandTarget, IntentionCommand, GitCommand } from './commands';
+import type { DropPosition } from './dropPosition';
 import { useGraphData } from './useGraphData';
 import { useGraphStore } from './graphStore';
 import type { UiOperationLogEntry } from './graphStore';
@@ -393,6 +394,23 @@ function App() {
     return fromGraph;
   };
 
+  const renderDropPosition = (entry: UiOperationLogEntry, position: DropPosition): React.ReactNode => {
+    switch (position.kind) {
+      case 'before':
+        return <>before <CommitChangeToken commitId={position.commit} changeId={changeForCommit(entry, position.commit)} /></>;
+      case 'after':
+        return <>after <CommitChangeToken commitId={position.commit} changeId={changeForCommit(entry, position.commit)} /></>;
+      case 'between':
+        return <>after <CommitChangeToken commitId={position.beforeCommit} changeId={changeForCommit(entry, position.beforeCommit)} /> and before <CommitChangeToken commitId={position.afterCommit} changeId={changeForCommit(entry, position.afterCommit)} /></>;
+      case 'new-branch':
+        return <>a branch from <CommitChangeToken commitId={position.commit} changeId={changeForCommit(entry, position.commit)} /></>;
+      case 'existing':
+        return <>existing commit <CommitChangeToken commitId={position.commit} changeId={changeForCommit(entry, position.commit)} /></>;
+      default:
+        return assertUnreachable(position as never);
+    }
+  };
+
   const renderCommandTarget = (entry: UiOperationLogEntry, target: CommandTarget): React.ReactNode => {
     switch (target.type) {
       case 'before':
@@ -415,19 +433,19 @@ function App() {
   const renderIntentionCommandSummary = (entry: UiOperationLogEntry, command: IntentionCommand): React.ReactNode => {
     switch (command.type) {
       case 'rebase-change':
-        return <>Rebase <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> onto {renderCommandTarget(entry, command.newParent)}</>;
+        return <>Rebase <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> onto {renderDropPosition(entry, command.position)}</>;
       case 'reorder-change':
-        return <>Reorder <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> to {renderCommandTarget(entry, command.newPosition)}</>;
+        return <>Reorder <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> to {renderDropPosition(entry, command.position)}</>;
       case 'squash-change-into':
         return <>Squash <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> into <CommitChangeToken commitId={command.targetChangeId} changeId={changeForCommit(entry, command.targetChangeId)} /></>;
       case 'move-file-to-change':
         return <>Move <code>{command.file.path}</code> from <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> to <CommitChangeToken commitId={command.targetChangeId} changeId={changeForCommit(entry, command.targetChangeId)} /></>;
       case 'split-file-from-change':
-        return <>Split <code>{command.file.path}</code> from <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> into {renderCommandTarget(entry, command.target)}</>;
+        return <>Split <code>{command.file.path}</code> from <CommitChangeToken commitId={command.sourceChangeId} changeId={changeForCommit(entry, command.sourceChangeId)} /> into {renderDropPosition(entry, command.position)}</>;
       case 'split-at-evolog':
         return <>Split <CommitChangeToken commitId={command.changeId} changeId={changeForCommit(entry, command.changeId)} /> at history entry <CommitChangeToken commitId={command.entryCommitId} changeId={changeForCommit(entry, command.entryCommitId)} /></>;
       case 'create-new-change':
-        return <>Create new change at {renderCommandTarget(entry, command.parent)}</>;
+        return <>Create new change at {renderDropPosition(entry, command.position)}</>;
       case 'update-change-description':
         return <>Update description for <CommitChangeToken commitId={command.commitId} changeId={changeForCommit(entry, command.commitId)} /></>;
       case 'abandon-change':
@@ -441,7 +459,7 @@ function App() {
       case 'add-bookmark':
         return <>Add bookmark <code>{command.bookmarkName as string}</code> at <CommitChangeToken commitId={command.targetCommitId} changeId={changeForCommit(entry, command.targetCommitId)} /></>;
       case 'hunk-split':
-        return <>Split {command.hunkRanges.length} hunk{command.hunkRanges.length === 1 ? '' : 's'} from <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> into {renderCommandTarget(entry, command.target)}</>;
+        return <>Split {command.hunkRanges.length} hunk{command.hunkRanges.length === 1 ? '' : 's'} from <CommitChangeToken commitId={command.sourceCommitId} changeId={changeForCommit(entry, command.sourceCommitId)} /> into {renderDropPosition(entry, command.position)}</>;
       default:
         return assertUnreachable(command as never);
     }

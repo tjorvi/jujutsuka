@@ -65,7 +65,7 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
         const rootConstraint = Constraint.create({
             pointA: { x: width/2, y: height },
             bodyB: rootBody,
-            pointB: { x: 0, y: -10 },
+            pointB: { x: 0, y: 12 },
             length: 0,
             stiffness: 0.001,
             damping: 0.1,
@@ -77,7 +77,7 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
         const leafBody = bodies[leafId];
         const leafConstraint = Constraint.create({
             bodyA: leafBody,
-            pointA: { x: 0, y: 10 },
+            pointA: { x: 0, y: -12 },
             pointB: { x: width/2, y: 0 },
             length: 0,
             stiffness: 0.001,
@@ -94,9 +94,9 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
          const link = Constraint.create({
             bodyA: fromBody,
             bodyB: toBody,
-            pointA: { x: 0, y: 12 },
-            pointB: { x: 0, y: -12 },
-            length: 120,
+            pointA: { x: 0, y: -12 },
+            pointB: { x: 0, y: 12 },
+            length: 50,
             stiffness: 0.1,
             damping: 0.15,
         });
@@ -148,7 +148,7 @@ export function PhysicsGraph({ graph }: PhysicsGraphProps) {
       render.textures = {};
       render.canvas.remove();
     };
-  }, []);
+  }, [graph.edges, graph.nodes]);
 
   return <div ref={hostRef} />;
 }

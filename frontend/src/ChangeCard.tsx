@@ -386,7 +386,7 @@ function BranchDropZone({ commitId }: { commitId: CommitId }) {
     if (isExecutingCommand) {
       return;
     }
-    void createNewChange([], { type: 'new-branch', fromCommitId: commitId });
+    void createNewChange([], { kind: 'new-branch', commit: commitId });
   };
 
   return (

@@ -26,6 +26,62 @@ import {
 } from './repo-parser.ts';
 import { z } from 'zod';
 import type { GitCommand } from '../../frontend/src/commands.ts';
+import type { CommandTarget } from './repo-parser.ts';
+
+const dropPositionSchema = z.union([
+  z.object({
+    kind: z.literal('before'),
+    commit: z.string(),
+  }),
+  z.object({
+    kind: z.literal('after'),
+    commit: z.string(),
+  }),
+  z.object({
+    kind: z.literal('between'),
+    beforeCommit: z.string(),
+    afterCommit: z.string(),
+  }),
+  z.object({
+    kind: z.literal('new-branch'),
+    commit: z.string(),
+  }),
+  z.object({
+    kind: z.literal('existing'),
+    commit: z.string(),
+  }),
+]);
+
+type DropPositionInput = z.infer<typeof dropPositionSchema>;
+
+function convertDropPosition(
+  position: DropPositionInput,
+  options: { betweenMode: 'between' | 'new-commit-between'; allowExisting?: boolean }
+): CommandTarget {
+  switch (position.kind) {
+    case 'before':
+      return { type: 'before', commitId: createCommitId(position.commit) };
+    case 'after':
+      return { type: 'after', commitId: createCommitId(position.commit) };
+    case 'between': {
+      const beforeCommitId = createCommitId(position.beforeCommit);
+      const afterCommitId = createCommitId(position.afterCommit);
+      if (options.betweenMode === 'new-commit-between') {
+        return { type: 'new-commit-between', beforeCommitId, afterCommitId };
+      }
+      return { type: 'between', beforeCommitId, afterCommitId };
+    }
+    case 'new-branch':
+      return { type: 'new-branch', fromCommitId: createCommitId(position.commit) };
+    case 'existing':
+      if (!options.allowExisting) {
+        throw new Error(`Drop position kind "existing" is not supported in this context`);
+      }
+      return { type: 'existing-commit', commitId: createCommitId(position.commit) };
+    default:
+      throw new Error(`Unsupported drop position kind: ${(position as { kind: string }).kind}`);
+  }
+}
 
 export const appRouter = router({
   fileChanges: publicProcedure
@@ -114,52 +170,20 @@ export const appRouter = router({
             status: z.string()
           }),
           sourceChangeId: z.string(),
-          target: z.union([
-            z.object({ type: z.literal('before'), commitId: z.string() }),
-            z.object({ type: z.literal('after'), commitId: z.string() }),
-            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
-            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
-            z.object({ 
-              type: z.literal('new-commit-between'), 
-              beforeCommitId: z.string(), 
-              afterCommitId: z.string() 
-            }),
-            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          position: dropPositionSchema,
+          sourceChangeStableId: z.string().optional()
         }),
         z.object({
           type: z.literal('rebase-change'),
           changeId: z.string(),
           changeStableId: z.string().optional(),
-          newParent: z.union([
-            z.object({ type: z.literal('before'), commitId: z.string() }),
-            z.object({ type: z.literal('after'), commitId: z.string() }),
-            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
-            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
-            z.object({ 
-              type: z.literal('new-commit-between'), 
-              beforeCommitId: z.string(), 
-              afterCommitId: z.string() 
-            }),
-            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          position: dropPositionSchema
         }),
         z.object({
           type: z.literal('reorder-change'),
           changeId: z.string(),
           changeStableId: z.string().optional(),
-          newPosition: z.union([
-            z.object({ type: z.literal('before'), commitId: z.string() }),
-            z.object({ type: z.literal('after'), commitId: z.string() }),
-            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
-            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
-            z.object({ 
-              type: z.literal('new-commit-between'), 
-              beforeCommitId: z.string(), 
-              afterCommitId: z.string() 
-            }),
-            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          position: dropPositionSchema
         }),
         z.object({
           type: z.literal('squash-change-into'),
@@ -181,18 +205,7 @@ export const appRouter = router({
             path: z.string(),
             status: z.string()
           })),
-          parent: z.union([
-            z.object({ type: z.literal('before'), commitId: z.string() }),
-            z.object({ type: z.literal('after'), commitId: z.string() }),
-            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
-            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
-            z.object({ 
-              type: z.literal('new-commit-between'), 
-              beforeCommitId: z.string(), 
-              afterCommitId: z.string() 
-            }),
-            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ])
+          position: dropPositionSchema
         }),
         z.object({
           type: z.literal('abandon-change'),
@@ -234,18 +247,7 @@ export const appRouter = router({
             startLine: z.number(),
             endLine: z.number()
           })),
-          target: z.union([
-            z.object({ type: z.literal('before'), commitId: z.string() }),
-            z.object({ type: z.literal('after'), commitId: z.string() }),
-            z.object({ type: z.literal('between'), beforeCommitId: z.string(), afterCommitId: z.string() }),
-            z.object({ type: z.literal('new-branch'), fromCommitId: z.string() }),
-            z.object({
-              type: z.literal('new-commit-between'),
-              beforeCommitId: z.string(),
-              afterCommitId: z.string()
-            }),
-            z.object({ type: z.literal('existing-commit'), commitId: z.string() })
-          ]),
+          position: dropPositionSchema,
           description: z.string().optional(),
           sourceChangeStableId: z.string().optional()
         }),
@@ -365,19 +367,22 @@ export const appRouter = router({
         } else if (command.type === 'split-file-from-change') {
           // Translate to split command
           const sourceCommitId = createCommitId(command.sourceChangeId);
-          const target = parseCommandTarget(command.target);
+          const position = dropPositionSchema.parse(command.position);
+          const target = convertDropPosition(position, { betweenMode: 'new-commit-between' });
           await executeSplit(repoPath, sourceCommitId, [command.file], target);
 
         } else if (command.type === 'rebase-change') {
           // Translate to rebase command
           const changeId = createCommitId(command.changeId);
-          const target = parseCommandTarget(command.newParent);
+          const position = dropPositionSchema.parse(command.position);
+          const target = convertDropPosition(position, { betweenMode: 'between', allowExisting: true });
           await executeRebase(repoPath, changeId, target);
 
         } else if (command.type === 'reorder-change') {
           // Reordering is essentially a rebase to a new position
           const changeId = createCommitId(command.changeId);
-          const target = parseCommandTarget(command.newPosition);
+          const position = dropPositionSchema.parse(command.position);
+          const target = convertDropPosition(position, { betweenMode: 'between', allowExisting: true });
           await executeRebase(repoPath, changeId, target);
 
         } else if (command.type === 'squash-change-into') {
@@ -404,7 +409,8 @@ export const appRouter = router({
 
         } else if (command.type === 'create-new-change') {
           // Create a new commit with the specified files
-          const target = parseCommandTarget(command.parent);
+          const position = dropPositionSchema.parse(command.position);
+          const target = convertDropPosition(position, { betweenMode: 'between' });
 
           if (command.files.length > 0) {
             throw new Error('Creating a new change with predefined files is not yet supported');
@@ -432,7 +438,8 @@ export const appRouter = router({
 
         } else if (command.type === 'hunk-split') {
           const sourceCommitId = createCommitId(command.sourceCommitId);
-          const target = parseCommandTarget(command.target);
+          const position = dropPositionSchema.parse(command.position);
+          const target = convertDropPosition(position, { betweenMode: 'new-commit-between' });
           await executeHunkSplit(repoPath, sourceCommitId, command.hunkRanges, target, command.description);
 
         } else if (command.type === 'rebase') {

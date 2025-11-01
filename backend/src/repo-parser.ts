@@ -750,17 +750,17 @@ export async function executeCreateEmptyChange(repoPath: string, target: Command
     .with({ type: 'between' }, async (t) => {
       await executeJjCommand(repoPath, 'new', [
         '--insert-after',
-        t.afterCommitId,
-        '--insert-before',
         t.beforeCommitId,
+        '--insert-before',
+        t.afterCommitId,
       ]);
     })
     .with({ type: 'new-commit-between' }, async (t) => {
       await executeJjCommand(repoPath, 'new', [
         '--insert-after',
-        t.afterCommitId,
-        '--insert-before',
         t.beforeCommitId,
+        '--insert-before',
+        t.afterCommitId,
       ]);
     })
     .with({ type: 'new-branch' }, async (t) => {

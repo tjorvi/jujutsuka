@@ -78,60 +78,35 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (position.kind === 'before' || position.kind === 'after') {
-      void rebaseChange(draggedCommitId, {
-        type: position.kind,
-        commitId: position.commit
-      });
+      void rebaseChange(draggedCommitId, position);
     } else if (position.kind === 'between') {
       const { beforeCommit, afterCommit } = position;
 
       if (isAncestor(beforeCommit, draggedCommitId)) {
-        void rebaseChange(draggedCommitId, {
-          type: 'before',
-          commitId: beforeCommit,
-        });
+        void rebaseChange(draggedCommitId, { kind: 'before', commit: beforeCommit });
         return;
       }
 
       if (isAncestor(afterCommit, draggedCommitId)) {
-        void rebaseChange(draggedCommitId, {
-          type: 'after',
-          commitId: afterCommit,
-        });
+        void rebaseChange(draggedCommitId, { kind: 'after', commit: afterCommit });
         return;
       }
 
       if (isAncestor(draggedCommitId, beforeCommit)) {
-        void rebaseChange(draggedCommitId, {
-          type: 'after',
-          commitId: beforeCommit,
-        });
+        void rebaseChange(draggedCommitId, { kind: 'after', commit: beforeCommit });
         return;
       }
 
       if (isAncestor(draggedCommitId, afterCommit)) {
-        void rebaseChange(draggedCommitId, {
-          type: 'before',
-          commitId: afterCommit,
-        });
+        void rebaseChange(draggedCommitId, { kind: 'before', commit: afterCommit });
         return;
       }
 
-      void rebaseChange(draggedCommitId, {
-        type: 'between',
-        beforeCommitId: beforeCommit,
-        afterCommitId: afterCommit,
-      });
+      void rebaseChange(draggedCommitId, position);
     } else if (position.kind === 'new-branch') {
-      void rebaseChange(draggedCommitId, {
-        type: 'new-branch',
-        fromCommitId: position.commit,
-      });
+      void rebaseChange(draggedCommitId, position);
     } else if (position.kind === 'existing') {
-      void rebaseChange(draggedCommitId, {
-        type: 'existing-commit',
-        commitId: position.commit,
-      });
+      void rebaseChange(draggedCommitId, position);
     }
   };
 
@@ -155,30 +130,13 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       // executeHunkSplit(fromCommitId, hunkRanges, { type: 'existing-commit', commitId: position.commit });
       return;
     } else if (position.kind === 'new-branch') {
-      // Split to new branch
-      executeHunkSplit(fromCommitId, hunkRanges, {
-        type: 'new-branch',
-        fromCommitId: position.commit
-      });
+      executeHunkSplit(fromCommitId, hunkRanges, position);
     } else if (position.kind === 'between') {
-      // Split to new commit between two commits
-      executeHunkSplit(fromCommitId, hunkRanges, {
-        type: 'new-commit-between',
-        beforeCommitId: position.beforeCommit,
-        afterCommitId: position.afterCommit
-      });
+      executeHunkSplit(fromCommitId, hunkRanges, position);
     } else if (position.kind === 'before') {
-      // Split to new commit before target
-      executeHunkSplit(fromCommitId, hunkRanges, {
-        type: 'before',
-        commitId: position.commit
-      });
+      executeHunkSplit(fromCommitId, hunkRanges, position);
     } else if (position.kind === 'after') {
-      // Split to new commit after target
-      executeHunkSplit(fromCommitId, hunkRanges, {
-        type: 'after',
-        commitId: position.commit
-      });
+      executeHunkSplit(fromCommitId, hunkRanges, position);
     }
   };
 

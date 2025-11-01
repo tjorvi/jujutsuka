@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, BookmarkName } from "../../backend/src/repo-parser";
 import type { GitCommand, CommandTarget, IntentionCommand, HunkRange } from './commands';
+import type { DropPosition } from './dropPosition';
 import { mutations } from './api';
 
 type CommitGraph = Record<CommitId, { commit: Commit; children: CommitId[] }>;
@@ -64,7 +65,29 @@ function diffOpLogEntries(opLogAfter: readonly OpLogEntry[], opLogBefore: readon
   return newEntries;
 }
 
-function addCommitFromTarget(target: CommandTarget | null | undefined, addCommit: (id: CommitId) => void) {
+function addCommitFromPosition(position: DropPosition | null | undefined, addCommit: (id: CommitId) => void) {
+  if (!position) {
+    return;
+  }
+  switch (position.kind) {
+    case 'before':
+    case 'after':
+    case 'existing':
+      addCommit(position.commit);
+      return;
+    case 'between':
+      addCommit(position.beforeCommit);
+      addCommit(position.afterCommit);
+      return;
+    case 'new-branch':
+      addCommit(position.commit);
+      return;
+    default:
+      return;
+  }
+}
+
+function addCommitFromLegacyTarget(target: CommandTarget | null | undefined, addCommit: (id: CommitId) => void) {
   if (!target) {
     return;
   }
@@ -139,15 +162,15 @@ function deriveOperationContext(
         return;
       case 'split-file-from-change':
         addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
-        addCommitFromTarget(command.target, addCommit);
+        addCommitFromPosition(command.position, addCommit);
         return;
       case 'rebase-change':
         addCommit(command.changeId, command.changeStableId ?? null);
-        addCommitFromTarget(command.newParent, addCommit);
+        addCommitFromPosition(command.position, addCommit);
         return;
       case 'reorder-change':
         addCommit(command.changeId, command.changeStableId ?? null);
-        addCommitFromTarget(command.newPosition, addCommit);
+        addCommitFromPosition(command.position, addCommit);
         return;
       case 'squash-change-into':
         addCommit(command.sourceChangeId, command.sourceChangeStableId ?? null);
@@ -158,7 +181,7 @@ function deriveOperationContext(
         addCommit(command.entryCommitId, command.entryChangeStableId ?? null);
         return;
       case 'create-new-change':
-        addCommitFromTarget(command.parent, addCommit);
+        addCommitFromPosition(command.position, addCommit);
         return;
       case 'update-change-description':
       case 'checkout-change':
@@ -173,7 +196,7 @@ function deriveOperationContext(
         return;
       case 'hunk-split':
         addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommitFromTarget(command.target, addCommit);
+        addCommitFromPosition(command.position, addCommit);
         return;
       case 'move-files':
         addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
@@ -181,7 +204,7 @@ function deriveOperationContext(
         return;
       case 'rebase':
         addCommit(command.commitId, command.changeStableId ?? null);
-        addCommitFromTarget(command.target, addCommit);
+        addCommitFromLegacyTarget(command.target, addCommit);
         return;
       case 'squash':
         addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
@@ -189,7 +212,7 @@ function deriveOperationContext(
         return;
       case 'split':
         addCommit(command.sourceCommitId, command.sourceChangeStableId ?? null);
-        addCommitFromTarget(command.target, addCommit);
+        addCommitFromLegacyTarget(command.target, addCommit);
         return;
       default:
         return;
@@ -217,6 +240,23 @@ function assertNever(value: never): never {
 
 function shortId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function summariseDropPosition(position: DropPosition): string {
+  switch (position.kind) {
+    case 'before':
+      return `before ${shortId(position.commit)}`;
+    case 'after':
+      return `after ${shortId(position.commit)}`;
+    case 'between':
+      return `after ${shortId(position.beforeCommit)} and before ${shortId(position.afterCommit)}`;
+    case 'new-branch':
+      return `new branch from ${shortId(position.commit)}`;
+    case 'existing':
+      return `existing commit ${shortId(position.commit)}`;
+    default:
+      return assertNever(position as never);
+  }
 }
 
 function summariseCommandTarget(target: CommandTarget): string {
@@ -257,17 +297,17 @@ function describeIntentionCommand(command: IntentionCommand): string {
     case 'move-file-to-change':
       return `Move ${command.file.path} from ${shortId(command.sourceChangeId)} to ${shortId(command.targetChangeId)}`;
     case 'split-file-from-change':
-      return `Split ${command.file.path} from ${shortId(command.sourceChangeId)} to ${summariseCommandTarget(command.target)}`;
+      return `Split ${command.file.path} from ${shortId(command.sourceChangeId)} to ${summariseDropPosition(command.position)}`;
     case 'rebase-change':
-      return `Rebase ${shortId(command.changeId)} onto ${summariseCommandTarget(command.newParent)}`;
+      return `Rebase ${shortId(command.changeId)} onto ${summariseDropPosition(command.position)}`;
     case 'reorder-change':
-      return `Reorder ${shortId(command.changeId)} to ${summariseCommandTarget(command.newPosition)}`;
+      return `Reorder ${shortId(command.changeId)} to ${summariseDropPosition(command.position)}`;
     case 'squash-change-into':
       return `Squash ${shortId(command.sourceChangeId)} into ${shortId(command.targetChangeId)}`;
     case 'split-at-evolog':
       return `Split ${shortId(command.changeId)} at evolog entry ${shortId(command.entryCommitId)}`;
     case 'create-new-change':
-      return `Create change at ${summariseCommandTarget(command.parent)} with ${describeFileCount(command.files)}`;
+      return `Create change at ${summariseDropPosition(command.position)} with ${describeFileCount(command.files)}`;
     case 'update-change-description': {
       const snippet = command.description.trim().replace(/\s+/g, ' ');
       const truncated = snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet;
@@ -285,7 +325,7 @@ function describeIntentionCommand(command: IntentionCommand): string {
       return `Add bookmark ${String(command.bookmarkName)} at ${shortId(command.targetCommitId)}`;
     case 'hunk-split': {
       const count = command.hunkRanges.length;
-      return `Split ${count} hunk${count === 1 ? '' : 's'} from ${shortId(command.sourceCommitId)} to ${summariseCommandTarget(command.target)}`;
+      return `Split ${count} hunk${count === 1 ? '' : 's'} from ${shortId(command.sourceCommitId)} to ${summariseDropPosition(command.position)}`;
     }
     default:
       return assertNever(command);
@@ -343,19 +383,19 @@ interface GraphState {
 
   // Intention-based UI actions
   moveFileToChange: (file: FileChange, sourceChangeId: CommitId, targetChangeId: CommitId) => Promise<void>;
-  splitFileFromChange: (file: FileChange, sourceChangeId: CommitId, target: CommandTarget) => Promise<void>;
-  rebaseChange: (changeId: CommitId, newParent: CommandTarget) => Promise<void>;
-  reorderChange: (changeId: CommitId, newPosition: CommandTarget) => Promise<void>;
+  splitFileFromChange: (file: FileChange, sourceChangeId: CommitId, position: DropPosition) => Promise<void>;
+  rebaseChange: (changeId: CommitId, position: DropPosition) => Promise<void>;
+  reorderChange: (changeId: CommitId, position: DropPosition) => Promise<void>;
   squashChangeInto: (sourceChangeId: CommitId, targetChangeId: CommitId) => Promise<void>;
   splitAtEvoLog: (changeId: CommitId, entryCommitId: CommitId) => Promise<void>;
-  createNewChange: (files: FileChange[], parent: CommandTarget) => Promise<void>;
+  createNewChange: (files: FileChange[], position: DropPosition) => Promise<void>;
   updateChangeDescription: (commitId: CommitId, description: string) => Promise<void>;
   abandonChange: (commitId: CommitId) => Promise<void>;
   checkoutChange: (commitId: CommitId) => Promise<void>;
   moveBookmark: (bookmarkName: BookmarkName, targetCommitId: CommitId) => Promise<void>;
   deleteBookmark: (bookmarkName: BookmarkName) => Promise<void>;
   addBookmark: (bookmarkName: BookmarkName, targetCommitId: CommitId) => Promise<void>;
-  executeHunkSplit: (sourceCommitId: CommitId, hunkRanges: HunkRange[], target: CommandTarget, description?: string) => Promise<void>;
+  executeHunkSplit: (sourceCommitId: CommitId, hunkRanges: HunkRange[], position: DropPosition, description?: string) => Promise<void>;
 
   // Legacy actions (for backwards compatibility)
   executeRebase: (commitId: CommitId, target: CommandTarget) => Promise<void>;
@@ -584,38 +624,38 @@ export const useGraphStore = create<GraphState>()(
         await get().executeCommand(command);
       },
 
-      splitFileFromChange: async (file, sourceChangeId, target) => {
+      splitFileFromChange: async (file, sourceChangeId, position) => {
         const commitGraph = get().commitGraph;
         const sourceStable = commitGraph?.[sourceChangeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'split-file-from-change',
           file,
           sourceChangeId,
-          target,
+          position,
           sourceChangeStableId: sourceStable,
         };
         await get().executeCommand(command);
       },
 
-      rebaseChange: async (changeId, newParent) => {
+      rebaseChange: async (changeId, position) => {
         const commitGraph = get().commitGraph;
         const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'rebase-change',
           changeId,
-          newParent,
+          position,
           changeStableId: stableId,
         };
         await get().executeCommand(command);
       },
 
-      reorderChange: async (changeId, newPosition) => {
+      reorderChange: async (changeId, position) => {
         const commitGraph = get().commitGraph;
         const stableId = commitGraph?.[changeId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'reorder-change',
           changeId,
-          newPosition,
+          position,
           changeStableId: stableId,
         };
         await get().executeCommand(command);
@@ -649,11 +689,11 @@ export const useGraphStore = create<GraphState>()(
         await get().executeCommand(command);
       },
 
-      createNewChange: async (files, parent) => {
+      createNewChange: async (files, position) => {
         const command: IntentionCommand = {
           type: 'create-new-change',
           files,
-          parent,
+          position,
         };
         await get().executeCommand(command);
       },
@@ -724,14 +764,14 @@ export const useGraphStore = create<GraphState>()(
         await get().executeCommand(command);
       },
 
-      executeHunkSplit: async (sourceCommitId, hunkRanges, target, description) => {
+      executeHunkSplit: async (sourceCommitId, hunkRanges, position, description) => {
         const commitGraph = get().commitGraph;
         const sourceStable = commitGraph?.[sourceCommitId]?.commit.changeId as ChangeId | undefined;
         const command: IntentionCommand = {
           type: 'hunk-split',
           sourceCommitId,
           hunkRanges,
-          target,
+          position,
           description,
           sourceChangeStableId: sourceStable,
         };

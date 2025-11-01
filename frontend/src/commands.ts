@@ -1,7 +1,5 @@
 import type { CommitId, ChangeId, FileChange, CommandTarget, BookmarkName } from "../../backend/src/repo-parser";
-
-// Re-export CommandTarget for convenience
-export type { CommandTarget };
+import type { DropPosition } from './dropPosition';
 
 // Intention-based commands framed in the context of our UIs
 
@@ -19,7 +17,7 @@ export interface SplitFileFromChangeCommand {
   type: 'split-file-from-change';
   file: FileChange;
   sourceChangeId: CommitId;
-  target: CommandTarget; // Where to put the new change
+  position: DropPosition; // Drop position unchanged from UI
   sourceChangeStableId?: ChangeId;
 }
 
@@ -28,13 +26,13 @@ export interface RebaseChangeCommand {
   type: 'rebase-change';
   changeId: CommitId;
   changeStableId?: ChangeId;
-  newParent: CommandTarget;
+  position: DropPosition;
 }
 
 export interface ReorderChangeCommand {
   type: 'reorder-change';
   changeId: CommitId;
-  newPosition: CommandTarget;
+  position: DropPosition;
   changeStableId?: ChangeId;
 }
 
@@ -59,7 +57,7 @@ export interface SplitAtEvoLogCommand {
 export interface CreateNewChangeCommand {
   type: 'create-new-change';
   files: FileChange[];
-  parent: CommandTarget;
+  position: DropPosition;
 }
 
 export interface UpdateChangeDescriptionCommand {
@@ -111,7 +109,7 @@ export interface HunkSplitCommand {
   type: 'hunk-split';
   sourceCommitId: CommitId;
   hunkRanges: HunkRange[];
-  target: CommandTarget;
+  position: DropPosition;
   description?: string;
   sourceChangeStableId?: ChangeId;
 }

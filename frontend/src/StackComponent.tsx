@@ -5,8 +5,8 @@ import { draggedFileChange, draggedChange, draggedHunk, useDragDrop, type DropZo
 import { queries } from './api';
 import { useGraphStore } from './graphStore';
 import styles from './StackGraph.module.css';
-import type { CommandTarget } from './commands';
 import { ChangeCard } from './ChangeCard';
+import { match } from 'ts-pattern';
 
 interface StackComponentProps {
   stack: Stack;
@@ -23,35 +23,24 @@ interface DropZoneProps {
   children?: React.ReactNode;
 }
 
-function commandTargetFromPosition(position: DropZonePosition): CommandTarget | null {
-  switch (position.kind) {
-    case 'before':
-      return { type: 'before', commitId: position.commit };
-    case 'after':
-      return { type: 'after', commitId: position.commit };
-    case 'between':
-      return {
-        type: 'between',
-        beforeCommitId: position.beforeCommit,
-        afterCommitId: position.afterCommit,
-      };
-    case 'new-branch':
-      return { type: 'new-branch', fromCommitId: position.commit };
-    default:
-      return null;
-  }
-}
+const shortCommitId = (commitId: CommitId): string =>
+  commitId.length <= 8 ? commitId : commitId.slice(0, 8);
 
 function DropZone({ position, children }: DropZoneProps) {
   const { handleFileDrop, handleCommitDrop, handleHunkDrop } = useDragDrop();
   const [isOver, setIsOver] = useState(false);
   const createNewChange = useGraphStore(state => state.createNewChange);
   const isExecutingCommand = useGraphStore(state => state.isExecutingCommand);
-  const commandTarget = commandTargetFromPosition(position);
-  const dropLabel = position.kind === 'between'
-    ? 'between these changes'
-    : `${position.kind} this change`;
+  const dropLabel = match(position)
+    .with({ kind: 'between' }, between => `after ${shortCommitId(between.afterCommit)} and before ${shortCommitId(between.beforeCommit)}`)
+    .with({ kind: 'before' }, before => `before ${shortCommitId(before.commit)}`)
+    .with({ kind: 'after' }, after => `after ${shortCommitId(after.commit)}`)
+    .with({ kind: 'existing' }, existing => `into existing commit ${shortCommitId(existing.commit)}`)
+    .with({ kind: 'new-branch' }, newBranch => `as new branch from ${shortCommitId(newBranch.commit)}`)
+    .exhaustive();
+
   const dropTitle = `Drop to move ${dropLabel}`;
+  const canCreateEmptyChange = position.kind !== 'existing';
 
   const dropMetadata: Record<string, string> = {
     'data-drop-kind': position.kind,
@@ -105,10 +94,10 @@ function DropZone({ position, children }: DropZoneProps) {
   };
 
   const handleCreateEmptyChange = () => {
-    if (!commandTarget) {
+    if (!canCreateEmptyChange) {
       return;
     }
-    void createNewChange([], commandTarget);
+    void createNewChange([], position);
   };
 
   const dropZoneLine = (
@@ -123,7 +112,7 @@ function DropZone({ position, children }: DropZoneProps) {
         onDragLeave={handleDragLeave}
         title={dropTitle}
       />
-      {commandTarget && (
+      {canCreateEmptyChange && (
         <button
           type="button"
           className={styles.dropZoneAction}

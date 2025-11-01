@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { ChangeId, CommitId, BookmarkName } from "../../backend/src/repo-parser";
+import type { DropPosition } from './dropPosition';
 import { z } from 'zod';
 
 const changeDragDataSchema = z.object({
@@ -134,17 +135,7 @@ export function draggedHunk(e: DragEventLike): HunkDragData | null {
   }
 }
 
-
-
-export type DropZonePosition = {
-  kind: 'between',
-  beforeCommit: CommitId;
-  afterCommit: CommitId;
-}
-| { kind: 'after', commit: CommitId }
-| { kind: 'before', commit: CommitId }
-| { kind: 'new-branch', commit: CommitId }
-| { kind: 'existing', commit: CommitId };
+export type DropZonePosition = DropPosition;
 
 type CommitDropMode = 'rebase' | 'squash';
 
