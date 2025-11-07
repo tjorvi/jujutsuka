@@ -5,6 +5,7 @@ import type { ChangeId, CommitId, FileChange, Commit, OpLogEntry, Bookmark, Book
 import type { GitCommand, IntentionCommand, HunkRange } from './commands';
 import type { DropPosition } from './dropPosition';
 import { mutations } from './api';
+import { DEFAULT_CUSTOM_REVSET, DEFAULT_REVSET_SELECTION, type RevsetPresetName, type RevsetSelection } from './revsetConfig';
 
 // Helper to convert Position (CommandTarget) to old target format for backend
 type LegacyTargetFormat =
@@ -352,6 +353,8 @@ interface GraphState {
   uiOperationLog: readonly UiOperationLogEntry[];
   isExecutingCommand: boolean; // Loading state for command execution
   repoPath: string;
+  revsetSelection: RevsetSelection;
+  customRevset: string;
   divergentChangeIds: ReadonlySet<ChangeId>;
   bookmarksByCommit: Record<CommitId, readonly BookmarkName[]>;
   hoveredCommitIds: ReadonlySet<CommitId>;
@@ -372,6 +375,9 @@ interface GraphState {
     relatedCommitAssociations?: readonly { commitId: CommitId; changeId?: ChangeId }[];
   }) => void;
   setRepoPath: (repoPath: string) => void;
+  setRevsetPreset: (preset: RevsetPresetName) => void;
+  selectCustomRevset: () => void;
+  setCustomRevsetValue: (revset: string) => void;
   setDivergentChangeIds: (changeIds: ReadonlySet<ChangeId>) => void;
   setBookmarks: (bookmarks: readonly Bookmark[] | undefined) => void;
   executeCommand: (command: IntentionCommand) => Promise<void>;
@@ -434,6 +440,8 @@ export const useGraphStore = create<GraphState>()(
       uiOperationLog: [],
       isExecutingCommand: false,
       repoPath: '',
+      revsetSelection: DEFAULT_REVSET_SELECTION,
+      customRevset: DEFAULT_CUSTOM_REVSET,
       divergentChangeIds: new Set<ChangeId>(),
       bookmarksByCommit: {},
       hoveredCommitIds: new Set<CommitId>(),
@@ -537,6 +545,24 @@ export const useGraphStore = create<GraphState>()(
       // Set repository path
       setRepoPath: (repoPath) => {
         set({ repoPath });
+      },
+
+      setRevsetPreset: (preset) => {
+        set({ revsetSelection: { kind: 'preset', preset } });
+      },
+
+      selectCustomRevset: () => {
+        set({ revsetSelection: { kind: 'custom' } });
+      },
+
+      setCustomRevsetValue: (revset) => {
+        set((state) => {
+          const updates: Partial<GraphState> = { customRevset: revset };
+          if (state.revsetSelection.kind === 'custom') {
+            updates.revsetSelection = { kind: 'custom' };
+          }
+          return updates;
+        });
       },
 
       setDivergentChangeIds: (changeIds) => {

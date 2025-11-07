@@ -440,11 +440,12 @@ export const appRouter = router({
   // Subscription for repo changes
   watchRepoChanges: publicProcedure
     .input(z.object({
-      repoPath: z.string()
+      repoPath: z.string(),
+      revset: z.string()
     }))
     .subscription(async function* ({ input }) {
         console.log(`🔔 Client subscribed to repo changes: ${input.repoPath}`);
-        for await (const repo of watchRepoChanges(input.repoPath)) {
+        for await (const repo of watchRepoChanges(input.repoPath, input.revset)) {
           yield repo;
         }
       

@@ -3,6 +3,7 @@ import { useSubscription, failed, succeeded, subscriptions, trpc } from './api';
 import { useGraphStore } from './graphStore';
 import { buildStackGraph, enhanceStackGraphForLayout } from "./stackUtils";
 import type { Bookmark, ChangeId, Commit, CommitId } from '../../backend/src/repo-parser';
+import { resolveRevsetExpression } from './revsetConfig';
 
 
 /**
@@ -58,10 +59,16 @@ export function useGraphData() {
   const commitGraph = useGraphStore(state => state.commitGraph);
   const setDivergentChangeIds = useGraphStore(state => state.setDivergentChangeIds);
   const setBookmarks = useGraphStore(state => state.setBookmarks);
+  const revsetSelection = useGraphStore(state => state.revsetSelection);
+  const customRevset = useGraphStore(state => state.customRevset);
+  const revset = useMemo(
+    () => resolveRevsetExpression(revsetSelection, customRevset),
+    [revsetSelection, customRevset]
+  );
 
   const commitsSubscription = useSubscription(
     subscriptions.watchRepoChanges,
-    { repoPath },
+    { repoPath, revset },
     { enabled: repoPath.trim().length > 0 }
   );
 

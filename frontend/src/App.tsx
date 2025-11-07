@@ -16,6 +16,7 @@ import { useGraphStore } from './graphStore';
 import type { UiOperationLogEntry } from './graphStore';
 import { useDragState } from './useDragState';
 import { trpc } from './api';
+import { RevsetSelector } from './RevsetSelector';
 
 const REPO_DIR_KEY = 'jwarrior-repo-directory';
 
@@ -745,28 +746,31 @@ function App() {
           📚 Jujutsu Stacks {isExecutingCommand && <span style={{ color: '#f59e0b', fontSize: '14px' }}>(executing...)</span>}
         </h1>
 
-        {/* Repository Directory Input */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label htmlFor="repo-dir" style={{ fontSize: '14px', color: '#6b7280', flexShrink: 0 }}>
-            Repo:
-          </label>
-          <input
-            id="repo-dir"
-            type="text"
-            value={repoDirectory}
-            onChange={(e) => setRepoDirectory(e.target.value)}
-            placeholder="/path/to/jj/repository"
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              fontSize: '14px',
-              fontFamily: 'monospace',
-              backgroundColor: '#ffffff',
-              color: '#1f2937',
-            }}
-          />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Repository Directory Input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label htmlFor="repo-dir" style={{ fontSize: '14px', color: '#6b7280', flexShrink: 0 }}>
+              Repo:
+            </label>
+            <input
+              id="repo-dir"
+              type="text"
+              value={repoDirectory}
+              onChange={(e) => setRepoDirectory(e.target.value)}
+              placeholder="/path/to/jj/repository"
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontFamily: 'monospace',
+                backgroundColor: '#ffffff',
+                color: '#1f2937',
+              }}
+            />
+          </div>
+          <RevsetSelector />
         </div>
 
         <button

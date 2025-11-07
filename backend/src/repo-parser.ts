@@ -210,14 +210,14 @@ export function parseJjLog(logOutput: string): Commit[] {
 /**
  * Helper function to execute the jj log command and parse its output
  */
-export async function getRepositoryCommits(repoPath: string): Promise<Commit[]> {
+export async function getRepositoryCommits(repoPath: string, revset: string): Promise<Commit[]> {
   return runWithRepoExclusive(repoPath, async () => {
     const template = 'commit_id ++ "|" ++ change_id ++ "|" ++ description.first_line() ++ "|" ++ author.name() ++ "|" ++ author.email() ++ "|" ++ author.timestamp() ++ "|" ++ parents.map(|p| p.commit_id()).join(",") ++ "|" ++ if(conflict, "true", "false") ++ "\\n"';
     console.log(`📥 Fetching repository commits from ${repoPath}`);
     console.log(`🔧 Using template: ${template}`);
     const escapedTemplateForSingleQuotes = template.replace(/'/g, `'\"'\"'`);
-    console.log(`📝 Equivalent shell command:\njj log -r root():: --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
-    const { stdout } = await $({ cwd: repoPath })`jj log -r root():: --no-graph --template ${template}`;
+    console.log(`📝 Equivalent shell command:\njj log -r ${revset} --ignore-working-copy --no-graph --template '${escapedTemplateForSingleQuotes}'`);
+    const { stdout } = await $({ cwd: repoPath })`jj log -r ${revset} --no-graph --template ${template}`;
     console.log('📜 Raw jj log output:\n', stdout);
 
     return parseJjLog(stdout);
@@ -1057,12 +1057,12 @@ export async function currentOpId(repoPath: string) {
   });
 }
 
-export async function* watchRepoChanges(repoPath: string) {
+export async function* watchRepoChanges(repoPath: string, revset: string) {
   const jjPath = join(repoPath, '.jj/repo/op_heads/');
 
   const initialSnapshot = await runWithRepoExclusive(repoPath, async () => {
     const opHead = await currentOpId(repoPath);
-    const commits = await getRepositoryCommits(repoPath);
+    const commits = await getRepositoryCommits(repoPath, revset);
     const currentCommitId = await getCurrentCommitId(repoPath);
     const gitHeadCommitId = await getGitHeadCommitId(repoPath);
     const bookmarks = await getBookmarks(repoPath);
@@ -1111,7 +1111,7 @@ export async function* watchRepoChanges(repoPath: string) {
           return { kind: 'unchanged', currentOpHead };
         }
 
-      const commits = await getRepositoryCommits(repoPath);
+      const commits = await getRepositoryCommits(repoPath, revset);
       const currentCommitId = await getCurrentCommitId(repoPath);
       const gitHeadCommitId = await getGitHeadCommitId(repoPath);
       const bookmarks = await getBookmarks(repoPath);
